@@ -1,0 +1,6 @@
+numpy
+Pillow
+scipy
+requests
+python-dotenv
+pytest

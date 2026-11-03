@@ -1,0 +1,11 @@
+.env
+.cache/
+.cache/**
+out/
+__pycache__/
+*.pyc
+.cache/voice/
+.cache/broll/
+.venv/
+venv/
+.DS_Store
