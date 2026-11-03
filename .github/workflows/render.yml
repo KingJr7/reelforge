@@ -1,0 +1,126 @@
+name: Generate Levelcash Videos
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg python3-pip python3-dev
+
+      - name: Install Python dependencies
+        run: |
+          pip3 install numpy scipy requests pillow assemblyai python-dotenv
+
+      - name: Run video generation (v1)
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          python3 make_reel.py \
+            --script scripts/levelcash_v1_humain.txt \
+            --voice-file v1.mp3 \
+            --assemblyai \
+            --bgm ssstik.io_1782406846547.mp3 \
+            --out out/levelcash_v1.mp4 \
+            --glitch-frames 4
+
+      - name: Run video generation (v2)
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          python3 make_reel.py \
+            --script scripts/levelcash_v2_humain.txt \
+            --voice-file v2.mp3 \
+            --assemblyai \
+            --bgm ssstik.io_1782406846547.mp3 \
+            --out out/levelcash_v2.mp4 \
+            --glitch-frames 4
+
+      - name: Run video generation (v3)
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          python3 make_reel.py \
+            --script scripts/levelcash_v3_humain.txt \
+            --voice-file v3.mp3 \
+            --assemblyai \
+            --bgm ssstik.io_1782406846547.mp3 \
+            --out out/levelcash_v3.mp4 \
+            --glitch-frames 4
+
+      - name: Run video generation (v4)
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          python3 make_reel.py \
+            --script scripts/levelcash_v4_humain.txt \
+            --voice-file v4.mp3 \
+            --assemblyai \
+            --bgm ssstik.io_1782406846547.mp3 \
+            --out out/levelcash_v4.mp4 \
+            --glitch-frames 4
+
+      - name: Run video generation (v5)
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          python3 make_reel.py \
+            --script scripts/levelcash_v5_humain.txt \
+            --voice-file v5.mp3 \
+            --assemblyai \
+            --bgm ssstik.io_1782406846547.mp3 \
+            --out out/levelcash_v5.mp4 \
+            --glitch-frames 4
+
+      - name: Run video generation (v6)
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          python3 make_reel.py \
+            --script scripts/levelcash_v6_tu_savais_que.txt \
+            --voice-file v6.mp3 \
+            --assemblyai \
+            --bgm ssstik.io_1782406846547.mp3 \
+            --out out/levelcash_v6.mp4 \
+            --glitch-frames 4
+
+      - name: Run video generation (v7)
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          python3 make_reel.py \
+            --script scripts/levelcash_v7_jai_decouvert.txt \
+            --voice-file v7.mp3 \
+            --assemblyai \
+            --bgm ssstik.io_1782406846547.mp3 \
+            --out out/levelcash_v7.mp4 \
+            --glitch-frames 4
+
+      - name: Upload video artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: levelcash-videos
+          path: out/*.mp4
