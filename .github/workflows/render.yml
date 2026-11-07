@@ -19,7 +19,8 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip3 install numpy scipy requests pillow assemblyai python-dotenv pytest
+          pip3 install numpy scipy requests pillow assemblyai python-dotenv pytest playwright
+          playwright install chromium
 
       - name: Run automated tests
         run: |
