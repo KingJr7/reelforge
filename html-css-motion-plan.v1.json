@@ -1,0 +1,32 @@
+{
+  "surface": "html-css",
+  "fps": 30,
+  "canvas": {"width": 1080, "height": 1920},
+  "personality": "premium-energetic",
+  "clock": "frame-driven",
+  "beats": [
+    {"name": "intro", "frames": "0-21", "purpose": "reveal frame, kicker and headline", "easing": "cubic-out"},
+    {"name": "kinetic-title", "frames": "22-72", "purpose": "stagger headline lines from alternating directions", "easing": "cubic-out"},
+    {"name": "data-accent", "frames": "73-125", "purpose": "animate bars, tag and scan line", "easing": "smoothstep"},
+    {"name": "hold", "frames": "126-144", "purpose": "hold the hierarchy for readability", "easing": "none"},
+    {"name": "outro", "frames": "145-180", "purpose": "fade and translate the composition", "easing": "cubic-in"}
+  ],
+  "layers": [
+    "ambient-grid",
+    "light-orb",
+    "directional-beam",
+    "headline",
+    "outlined-number",
+    "data-card",
+    "accent-bars",
+    "scan-line",
+    "footer"
+  ],
+  "safe_zones": {"top": 180, "bottom": 260, "left": 80, "right": 80},
+  "constraints": [
+    "no browser-time animation",
+    "no random values",
+    "transform and opacity before layout properties",
+    "important text holds at least 12 frames"
+  ]
+}

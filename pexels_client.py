@@ -29,7 +29,10 @@ def search_photo(query: str) -> str | None:
     headers = {"Authorization": PEXELS_API_KEY}
     params = {"query": query, "orientation": "portrait", "per_page": 15}
 
-    resp = requests.get(url, headers=headers, params=params, timeout=30)
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+    except requests.RequestException:
+        return None
     if resp.status_code != 200:
         return None
 
@@ -52,7 +55,10 @@ def search_video(query: str, min_duration: float = 0.0) -> str | None:
     headers = {"Authorization": PEXELS_API_KEY}
     params = {"query": query, "orientation": "portrait", "per_page": 15, "size": "medium"}
 
-    resp = requests.get(url, headers=headers, params=params, timeout=30)
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+    except requests.RequestException:
+        return None
     if resp.status_code != 200:
         return None
 
@@ -115,10 +121,13 @@ def download_broll(
     query = source
     attempts = 0
     while attempts < 15:
-        if kind == "video":
-            url = search_video(query, min_duration=0)
-        else:
-            url = search_photo(query)
+        try:
+            if kind == "video":
+                url = search_video(query, min_duration=0)
+            else:
+                url = search_photo(query)
+        except requests.RequestException:
+            return None
 
         if url is None:
             # Retente avec les 2 premiers mots

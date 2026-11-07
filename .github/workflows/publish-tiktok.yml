@@ -1,0 +1,53 @@
+name: Publish generated MP4 to TikTok
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID du run GitHub Actions qui contient l'artifact levelcash-videos"
+        required: true
+        type: string
+      video_name:
+        description: "Nom exact du MP4 dans l'artifact"
+        required: true
+        type: string
+      description:
+        description: "Description et hashtags TikTok"
+        required: true
+        type: string
+      schedule:
+        description: "Optionnel : date ISO UTC, au moins 20 minutes dans le futur"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download generated artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: levelcash-videos
+          path: incoming
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uploader
+        run: |
+          python3 -m pip install -r requirements-publish.txt
+          playwright install --with-deps chromium
+
+      - name: Publish selected MP4
+        env:
+          TIKTOK_SESSIONID: ${{ secrets.TIKTOK_SESSIONID }}
+          TIKTOK_COOKIES_B64: ${{ secrets.TIKTOK_COOKIES_B64 }}
+          TIKTOK_SCHEDULE: ${{ inputs.schedule }}
+        run: |
+          args=(--video "incoming/${{ inputs.video_name }}" --description "${{ inputs.description }}")
+          if [ -n "$TIKTOK_SCHEDULE" ]; then args+=(--schedule "$TIKTOK_SCHEDULE"); fi
+          python3 tiktok_publish.py "${args[@]}"

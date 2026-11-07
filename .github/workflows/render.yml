@@ -19,7 +19,13 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip3 install numpy scipy requests pillow assemblyai python-dotenv
+          pip3 install numpy scipy requests pillow assemblyai python-dotenv pytest
+
+      - name: Run automated tests
+        run: |
+          PYTHONPATH=. pytest -q
+          python3 -m py_compile *.py
+          git diff --check
 
       - name: Run video generation (v1)
         env:
@@ -117,6 +123,20 @@ jobs:
             --assemblyai \
             --bgm ssstik.io_1782406846547.mp3 \
             --out out/levelcash_v7.mp4 \
+            --glitch-frames 4
+
+      - name: Run video generation (v8 delestage)
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+        run: |
+          python3 make_reel.py \
+            --script scripts/levelcash_delestage.txt \
+            --voice-file v8.mp3 \
+            --assemblyai \
+            --bgm ssstik.io_1782406846547.mp3 \
+            --out out/levelcash_delestage.mp4 \
             --glitch-frames 4
 
       - name: Upload video artifacts

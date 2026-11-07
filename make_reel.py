@@ -31,6 +31,8 @@ from audio_mixer import (
 )
 from sfx import build_sfx_bus
 from renderer import render_timeline
+from html_motion_renderer import render_html_motion
+from hybrid_test import run_hybrid, _editorial_from_timeline
 from elevenlabs_client import generate_voice as generate_voice_elevenlabs, list_voices as list_voices_elevenlabs
 from pexels_client import download_broll
 from assemblyai_client import transcribe_words
@@ -63,11 +65,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--invert-at", type=float, default=None)
     p.add_argument("--lufs", type=float, default=-14.0)
     p.add_argument("--glitch-frames", type=int, default=GLITCH_FRAMES_DEFAULT)
+    p.add_argument("--motion-style", choices=["premium", "energetic", "minimal"], default="premium")
+    p.add_argument("--transition", choices=["glitch", "flash", "wipe", "zoom", "blur", "clean"], default="glitch")
+    p.add_argument("--engine", choices=["classic", "html", "hybrid"], default="classic",
+                   help="Backend visuel : classic (défaut), html frame-driven ou hybrid")
+    p.add_argument("--html-template", choices=["auto", "hero", "numbers", "split", "cta", "diagram", "comparison", "broll"], default="auto",
+                   help="Template de scène (auto ou variante) pour les backends html/hybrid")
+    p.add_argument("--scene-plan", default=None,
+                   help="Plan JSON utilisateur pour choisir les scènes HTML/classic")
     p.add_argument("--duck-db", type=float, default=DUCK_DB_DEFAULT)
     p.add_argument("--preview", action="store_true")
     p.add_argument("--demo", action="store_true")
     p.add_argument("--debug", action="store_true")
     p.add_argument("--keep-temp", action="store_true")
+    p.add_argument("--export-audio-buses", action="store_true",
+                   help="Exporte voice/bgm/sfx WAV séparés pour analyse")
     p.add_argument("--force-voice", action="store_true")
     p.add_argument("--list-voices", action="store_true")
     p.add_argument("--nvenc", action="store_true")
@@ -343,17 +355,64 @@ def main() -> None:
         gain = compute_duck_envelope(tl.duration, word_times, duck_db=args.duck_db)
         bgm_audio = apply_ducking(bgm_audio, gain)
 
-    mix_path = mix_audio(voice_audio, sfx_bus, bgm_audio, tl.duration)
+    mix_path = mix_audio(voice_audio, sfx_bus, bgm_audio, tl.duration, word_times=word_times)
     print(f"  Mix écrit : {mix_path}")
 
+    if args.export_audio_buses:
+        bus_base = out_path.with_suffix("")
+        bus_files = {
+            "voice": bus_base.with_suffix(".voice.wav"),
+            "bgm": bus_base.with_suffix(".bgm.wav"),
+            "sfx": bus_base.with_suffix(".sfx.wav"),
+        }
+        wavfile.write(str(bus_files["voice"]), AUDIO_SAMPLE_RATE, voice_audio.astype(np.float32))
+        wavfile.write(str(bus_files["bgm"]), AUDIO_SAMPLE_RATE, bgm_audio.astype(np.float32))
+        wavfile.write(str(bus_files["sfx"]), AUDIO_SAMPLE_RATE, sfx_bus.astype(np.float32))
+        print(f"  Bus audio exportés : {', '.join(str(path) for path in bus_files.values())}")
+
     # 7. Rendu vidéo
-    print("  Rendu vidéo (frame par frame)...")
-    render_timeline(
-        tl, Path(mix_path), out_path, width, height,
-        demo=args.demo, debug=args.debug,
-        glitch_frames=args.glitch_frames,
-        nvenc=nvenc_available,
-    )
+    print(f"  Rendu vidéo avec le backend '{args.engine}'...")
+    if args.engine == "classic":
+        render_timeline(
+            tl, Path(mix_path), out_path, width, height,
+            demo=args.demo, debug=args.debug,
+            target_lufs=args.lufs,
+            motion_style=args.motion_style,
+            transition=args.transition,
+            glitch_frames=args.glitch_frames,
+            nvenc=nvenc_available,
+        )
+    elif args.engine == "html":
+        editorial = _editorial_from_timeline(timeline_json)
+        render_html_motion(
+            out_path, duration=tl.duration, fps=FPS, width=width, height=height,
+            audio_path=Path(mix_path), template=args.html_template, has_cta=bool(tl.cta), **editorial,
+        )
+    else:
+        # Le backend hybride rend le classic une seule fois dans un temporaire,
+        # puis compose l'intro HTML avec le même mix et la même timeline.
+        with tempfile.TemporaryDirectory(prefix="reelforge_hybrid_render_") as temp_dir:
+            classic_path = Path(temp_dir) / "classic_source.mp4"
+            render_timeline(
+                tl, Path(mix_path), classic_path, width, height,
+                demo=args.demo, debug=args.debug,
+                target_lufs=args.lufs,
+                motion_style=args.motion_style,
+                transition=args.transition,
+                glitch_frames=args.glitch_frames,
+                nvenc=nvenc_available,
+            )
+            html_duration = min(3.0, max(0.8, tl.duration * 0.25))
+            classic_duration = max(0.8, tl.duration - html_duration)
+            run_hybrid(
+                out_path, classic_path, Path(voice_path),
+                html_duration=html_duration,
+                classic_duration=classic_duration,
+                timeline_path=timeline_json,
+                audio_source=classic_path,
+                template=args.html_template,
+                scene_plan_path=Path(args.scene_plan) if args.scene_plan else None,
+            )
 
     if not args.keep_temp:
         try:

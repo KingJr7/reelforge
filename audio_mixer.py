@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from scipy import signal
 from scipy.io import wavfile
 
 from config import AUDIO_SAMPLE_RATE, VOICE_PEAK_DB, BGM_PEAK_DB, DUCK_DB_DEFAULT, DUCK_DB_SILENCE
@@ -80,6 +81,29 @@ def _normalize_peak_stereo(audio: np.ndarray, peak_db: float) -> np.ndarray:
         target = 10.0 ** (peak_db / 20.0)
         audio = audio * (target / peak)
     return np.clip(audio, -1.0, 1.0).astype(np.float32)
+
+
+def _normalize_rms_stereo(audio: np.ndarray, target_db: float = -24.0) -> np.ndarray:
+    """Aligne doucement un bus sur un RMS cible avant le peak limiting final."""
+    if len(audio) == 0:
+        return audio.astype(np.float32)
+    rms = float(np.sqrt(np.mean(np.square(audio))))
+    if rms <= 1e-8:
+        return audio.astype(np.float32)
+    target = 10.0 ** (target_db / 20.0)
+    gain = np.clip(target / rms, 0.25, 2.0)
+    return np.clip(audio * gain, -1.0, 1.0).astype(np.float32)
+
+
+def measure_audio_stats(audio: np.ndarray) -> dict[str, float]:
+    """Retourne des métriques simples pour détecter niveau faible ou clipping."""
+    if len(audio) == 0:
+        return {"rms_db": -120.0, "peak_db": -120.0, "crest_db": 0.0}
+    rms = float(np.sqrt(np.mean(np.square(audio))))
+    peak = float(np.max(np.abs(audio)))
+    rms_db = 20.0 * np.log10(max(rms, 1e-8))
+    peak_db = 20.0 * np.log10(max(peak, 1e-8))
+    return {"rms_db": rms_db, "peak_db": peak_db, "crest_db": peak_db - rms_db}
 
 
 # --------------------------------------------------------------------------- #
@@ -174,6 +198,80 @@ def apply_ducking(bgm: np.ndarray, gain: np.ndarray) -> np.ndarray:
     return result
 
 
+def compute_sfx_duck_envelope(duration: float, word_times: list[tuple[float, float]],
+                              duck_db: float = -4.0) -> np.ndarray:
+    """Réduit légèrement les SFX pendant les mots sans les faire disparaître."""
+    n = int(duration * AUDIO_SAMPLE_RATE)
+    target = np.ones(n, dtype=np.float64)
+    speech_gain = 10.0 ** (duck_db / 20.0)
+    t = np.arange(n) / AUDIO_SAMPLE_RATE
+    for start, end in word_times:
+        mask = (t >= max(0.0, start - 0.015)) & (t <= end + 0.04)
+        target[mask] = speech_gain
+
+    gain = np.ones(n, dtype=np.float64)
+    attack = max(1, int(0.012 * AUDIO_SAMPLE_RATE))
+    release = max(1, int(0.080 * AUDIO_SAMPLE_RATE))
+    attack_coeff = np.exp(-1.0 / attack)
+    release_coeff = np.exp(-1.0 / release)
+    for i in range(1, n):
+        coeff = attack_coeff if target[i] < gain[i - 1] else release_coeff
+        gain[i] = target[i] + (gain[i - 1] - target[i]) * coeff
+    return gain.astype(np.float32)
+
+
+def _smooth_control(control: np.ndarray, attack_s: float, release_s: float) -> np.ndarray:
+    """Lisse un contrôle audio avec attaque courte et relâchement naturel."""
+    result = np.empty_like(control, dtype=np.float32)
+    if len(control) == 0:
+        return result
+    result[0] = control[0]
+    attack_coeff = np.exp(-1.0 / max(1.0, attack_s * AUDIO_SAMPLE_RATE))
+    release_coeff = np.exp(-1.0 / max(1.0, release_s * AUDIO_SAMPLE_RATE))
+    for i in range(1, len(control)):
+        coeff = attack_coeff if control[i] < result[i - 1] else release_coeff
+        result[i] = control[i] + (result[i - 1] - control[i]) * coeff
+    return result
+
+
+def _process_voice(audio: np.ndarray) -> np.ndarray:
+    """Chaîne vocale offline : HPF, de-esser, compression et peak cible."""
+    if len(audio) == 0:
+        return audio.astype(np.float32)
+
+    # Coupe le rumble sans supprimer le corps de la voix.
+    sos = signal.butter(2, 80.0, btype="highpass", fs=AUDIO_SAMPLE_RATE, output="sos")
+    processed = signal.sosfilt(sos, audio, axis=0).astype(np.float32)
+
+    # De-esser : réduit uniquement la bande sifflante au-dessus de 4.5 kHz.
+    sibilant_sos = signal.butter(
+        2, [4500.0, 10000.0], btype="bandpass", fs=AUDIO_SAMPLE_RATE, output="sos"
+    )
+    sibilant = signal.sosfilt(sibilant_sos, processed, axis=0).astype(np.float32)
+    sibilant_level = np.max(np.abs(sibilant), axis=1)
+    sibilant_db = 20.0 * np.log10(np.maximum(sibilant_level, 1e-8))
+    deess_amount = np.clip((sibilant_db + 32.0) / 12.0, 0.0, 0.45).astype(np.float32)
+    deess_amount = _smooth_control(deess_amount, 0.002, 0.045)
+    processed -= sibilant * deess_amount[:, None]
+
+    # Présence légère : intelligibilité des consonnes sans booster toute la bande aiguë.
+    presence_sos = signal.butter(
+        2, [1800.0, 4200.0], btype="bandpass", fs=AUDIO_SAMPLE_RATE, output="sos"
+    )
+    presence = signal.sosfilt(presence_sos, processed, axis=0).astype(np.float32)
+    processed += presence * 0.10
+
+    # Compresseur dynamique : ratio 3:1, seuil -18 dBFS, relâchement musical.
+    detector = np.max(np.abs(processed), axis=1)
+    detector_db = 20.0 * np.log10(np.maximum(detector, 1e-8))
+    over = np.maximum(detector_db - (-18.0), 0.0)
+    gain_db = -(over * (1.0 - 1.0 / 3.0))
+    gain = 10.0 ** (gain_db / 20.0)
+    gain = _smooth_control(gain.astype(np.float32), 0.006, 0.090)
+    processed *= gain[:, None]
+    return _normalize_peak_stereo(processed, VOICE_PEAK_DB)
+
+
 # --------------------------------------------------------------------------- #
 # BGM : chargement, boucle, fondu entrée/sortie
 # --------------------------------------------------------------------------- #
@@ -188,20 +286,16 @@ def load_bgm(path: str | None, duration: float) -> np.ndarray:
     else:
         audio = _synth_bgm_loop(duration)
 
-    # Répète/coupe pour couvrir la durée
+    # Répète/coupe pour couvrir la durée avec crossfade entre les boucles.
     n_target = int(duration * AUDIO_SAMPLE_RATE)
     if len(audio) == 0:
         return np.zeros((n_target, 2), dtype=np.float32)
 
-    if len(audio) >= n_target:
-        audio = audio[:n_target]
-    else:
-        repeats = math.ceil(n_target / len(audio))
-        audio = np.tile(audio, (repeats, 1))[:n_target]
+    audio = _loop_with_crossfades(audio, n_target)
 
-    # Fondu d'entrée 1 s, sortie 1.5 s
-    fade_in = int(1.0 * AUDIO_SAMPLE_RATE)
-    fade_out = int(1.5 * AUDIO_SAMPLE_RATE)
+    # Fondu d'entrée 1 s, sortie 1.5 s, borné aux très courtes vidéos.
+    fade_in = min(int(1.0 * AUDIO_SAMPLE_RATE), n_target)
+    fade_out = min(int(1.5 * AUDIO_SAMPLE_RATE), n_target)
     env = np.ones(n_target, dtype=np.float32)
     if fade_in > 0:
         env[:fade_in] = np.linspace(0.0, 1.0, fade_in, dtype=np.float32)
@@ -211,8 +305,42 @@ def load_bgm(path: str | None, duration: float) -> np.ndarray:
     result[:, 0] *= env
     result[:, 1] *= env
 
-    # Normalise à -10 dBFS de crête
+    # D'abord un alignement RMS, puis un plafond de crête pour éviter qu'un BGM
+    # très silencieux ou très dense ne change brutalement le rapport voix/musique.
+    result = _normalize_rms_stereo(result, target_db=-25.0)
     return _normalize_peak_stereo(result, BGM_PEAK_DB)
+
+
+def _loop_with_crossfades(audio: np.ndarray, target_samples: int,
+                          crossfade_s: float = 0.25) -> np.ndarray:
+    """Boucle une piste sans clic ni rupture de phase trop brutale."""
+    if len(audio) >= target_samples:
+        return audio[:target_samples].copy()
+
+    result = np.zeros((target_samples, 2), dtype=np.float32)
+    position = 0
+    crossfade_samples = int(crossfade_s * AUDIO_SAMPLE_RATE)
+    first = min(len(audio), target_samples)
+    result[:first] = audio[:first]
+    position = first
+
+    while position < target_samples and len(audio) > 0:
+        overlap = min(crossfade_samples, position, len(audio), target_samples - position)
+        if overlap > 0:
+            fade_out = np.linspace(1.0, 0.0, overlap, dtype=np.float32)[:, None]
+            fade_in = np.linspace(0.0, 1.0, overlap, dtype=np.float32)[:, None]
+            result[position - overlap:position] = (
+                result[position - overlap:position] * fade_out
+                + audio[:overlap] * fade_in
+            )
+        start = overlap
+        available = min(len(audio) - start, target_samples - position)
+        if available <= 0:
+            break
+        result[position:position + available] = audio[start:start + available]
+        position += available
+
+    return result
 
 
 def _synth_bgm_loop(duration: float) -> np.ndarray:
@@ -239,7 +367,7 @@ def _synth_bgm_loop(duration: float) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 
 def mix_audio(voice_audio: np.ndarray, sfx_bus: np.ndarray, bgm_audio: np.ndarray,
-              duration: float) -> Path:
+              duration: float, word_times: list[tuple[float, float]] | None = None) -> Path:
     """Mélange voix + SFX + BGM, écrit mix.wav, retourne le chemin."""
     n = int(duration * AUDIO_SAMPLE_RATE)
 
@@ -250,15 +378,21 @@ def mix_audio(voice_audio: np.ndarray, sfx_bus: np.ndarray, bgm_audio: np.ndarra
         out[:len(audio)] = audio
         return out
 
-    voice = pad_or_truncate(voice_audio)
+    voice = _process_voice(pad_or_truncate(voice_audio))
     sfx = pad_or_truncate(sfx_bus)
+    if word_times:
+        sfx *= compute_sfx_duck_envelope(duration, word_times)[:, None]
     bgm = pad_or_truncate(bgm_audio)
 
     mix = voice + bgm + sfx
-    # Limite douce pour éviter le clipping avant loudnorm
-    mix = np.tanh(mix * 0.95) * 0.95
+    # Réduction de gain globale seulement si la somme dépasse le headroom.
+    # La limitation finale est ensuite effectuée par FFmpeg/loudnorm.
+    peak = float(np.max(np.abs(mix)))
+    if peak > 0.98:
+        mix *= np.float32(0.98 / peak)
     mix = np.clip(mix, -1.0, 1.0).astype(np.float32)
 
-    mix_path = Path(tempfile.gettempdir()) / "reelforge_mix.wav"
+    with tempfile.NamedTemporaryFile(prefix="reelforge_mix_", suffix=".wav", delete=False) as tmp:
+        mix_path = Path(tmp.name)
     wavfile.write(str(mix_path), AUDIO_SAMPLE_RATE, mix)
     return mix_path

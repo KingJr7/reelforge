@@ -23,8 +23,10 @@ from config import (
     GLITCH_BAND_SHIFT, DEFAULT_INVERT_AT, SEED, AUDIO_SAMPLE_RATE,
     CTA_ENTRY_FRAMES, CTA_SLIDE_UP, CTA_MIN_DISPLAY, CTA_BREATH_MIN,
     CTA_BREATH_MAX, CTA_BREATH_PERIOD, TEXT_SIZE_STRONG as CTA_SIZE,
+    PREVIEW_WIDTH,
 )
 from easing import ease_out_cubic, ease_in_cubic, ease_in_out_cubic, ease_out_back
+from motion import entry_progress, exit_progress, get_motion_style
 from timeline import Timeline, WordEvent, CardEvent, InvertEvent, CtaEvent
 
 
@@ -191,13 +193,13 @@ def _get_bg_base(width: int, height: int) -> np.ndarray:
     return base
 
 
-_grain_rng = np.random.RandomState(SEED)
+_grain_cache: dict[tuple[int, int], np.ndarray] = {}
 
 
 def draw_background_np(f: int, width: int, height: int, palette) -> np.ndarray:
     t = f / FPS
     base = _get_bg_base(width, height)
-    arr = base.astype(np.float64)
+    arr = base.astype(np.float32)
 
     # Dérive du dégradé via roll (déplacement circulaire, pas de récalcul)
     drift = math.sin(2.0 * math.pi * t / 8.0)
@@ -209,7 +211,7 @@ def draw_background_np(f: int, width: int, height: int, palette) -> np.ndarray:
 
     # Variation de luminosité max 3 %
     var = 0.03 * math.sin(2.0 * math.pi * t / 8.0)
-    arr = arr * (1.0 + var)
+    arr = arr * np.float32(1.0 + var)
 
     # Si palette sombre, inverser le dégradé
     if palette.bg == "#000000":
@@ -218,7 +220,15 @@ def draw_background_np(f: int, width: int, height: int, palette) -> np.ndarray:
     arr = np.clip(arr, 0, 255)
 
     # Grain fin à 1/4 de résolution puis répété (16x plus rapide, imperceptible)
-    grain_small = _grain_rng.standard_normal((height // 4, width // 4, 1)) * 255 * 0.015
+    grain_key = (width, height)
+    if grain_key not in _grain_cache:
+        rng = np.random.RandomState(SEED)
+        _grain_cache[grain_key] = (
+            rng.standard_normal((max(1, height // 4), max(1, width // 4), 1))
+            * 255 * 0.015
+        ).astype(np.float32)
+    grain_source = _grain_cache[grain_key]
+    grain_small = np.roll(grain_source, (f % grain_source.shape[0], (f * 2) % grain_source.shape[1]), axis=(0, 1))
     grain = np.repeat(np.repeat(grain_small, 4, axis=0), 4, axis=1)[:height, :width]
     grain = np.clip(grain, -32, 32)
     arr = np.clip(arr + grain, 0, 255).astype(np.uint8)
@@ -256,6 +266,20 @@ def composite_sprite(canvas: np.ndarray, sprite: np.ndarray,
 
     blended = region_f * (1.0 - alpha) + rgb * alpha
     canvas[y0:y1, x0:x1] = np.clip(blended, 0, 255).astype(np.uint8)
+
+
+def make_motion_accent_np(width: int, height: int, color: tuple[int, int, int],
+                          progress: float) -> np.ndarray:
+    """Barre d'accent animée pour les mots emphasis/strong."""
+    progress = max(0.0, min(1.0, progress))
+    bar_h = max(6, int(height * 0.045))
+    bar_w = max(8, int(width * progress))
+    sprite = Image.new("RGBA", (width, bar_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(sprite)
+    radius = max(2, bar_h // 2)
+    draw.rounded_rectangle([0, 0, bar_w, bar_h], radius=radius,
+                           fill=color + (210,))
+    return np.array(sprite, dtype=np.uint8)
 
 
 # --------------------------------------------------------------------------- #
@@ -354,6 +378,57 @@ def apply_glitch_np(canvas: np.ndarray, f: int, invert_frame: int,
     return arr
 
 
+def apply_flash_np(canvas: np.ndarray, offset: int) -> np.ndarray:
+    """Flash court et contrôlé pour une transition premium/énergique."""
+    intensity_by_frame = {0: 0.72, 1: 0.34, 2: 0.12}
+    intensity = intensity_by_frame.get(offset, 0.0)
+    if intensity <= 0.0:
+        return canvas
+    white = np.full_like(canvas, 255, dtype=np.uint8)
+    return np.clip(
+        canvas.astype(np.float32) * (1.0 - intensity)
+        + white.astype(np.float32) * intensity,
+        0, 255,
+    ).astype(np.uint8)
+
+
+def apply_wipe_np(canvas: np.ndarray, offset: int) -> np.ndarray:
+    """Accent vertical animé pour une transition directionnelle légère."""
+    progress = min(max((offset + 1) / 3.0, 0.0), 1.0)
+    x = int(canvas.shape[1] * progress)
+    band = max(2, canvas.shape[1] // 180)
+    result = canvas.copy()
+    left = max(0, x - band)
+    right = min(canvas.shape[1], x + band)
+    result[:, left:right] = np.clip(
+        result[:, left:right].astype(np.float32) * 0.35 + 255.0 * 0.65,
+        0, 255,
+    ).astype(np.uint8)
+    return result
+
+
+def apply_zoom_cut_np(canvas: np.ndarray, offset: int) -> np.ndarray:
+    """Zoom cut court, centré et borné à trois frames."""
+    zoom = {0: 1.10, 1: 1.06, 2: 1.02}.get(offset, 1.0)
+    if zoom == 1.0:
+        return canvas
+    h, w = canvas.shape[:2]
+    image = Image.fromarray(canvas, mode="RGB")
+    resized = image.resize((int(w * zoom), int(h * zoom)), Image.Resampling.BILINEAR)
+    left = (resized.width - w) // 2
+    top = (resized.height - h) // 2
+    return np.array(resized.crop((left, top, left + w, top + h)), dtype=np.uint8)
+
+
+def apply_blur_reveal_np(canvas: np.ndarray, offset: int) -> np.ndarray:
+    """Révélation floue courte, réservée aux transitions brèves."""
+    radius = {0: 4.0, 1: 2.0, 2: 0.5}.get(offset, 0.0)
+    if radius <= 0.0:
+        return canvas
+    image = Image.fromarray(canvas, mode="RGB").filter(ImageFilter.GaussianBlur(radius=radius))
+    return np.array(image, dtype=np.uint8)
+
+
 # --------------------------------------------------------------------------- #
 # Contenu carte B-roll (demo : dégradés colorés)
 # --------------------------------------------------------------------------- #
@@ -392,7 +467,12 @@ def make_demo_card_np(size_key: str, width: int) -> np.ndarray:
     return _demo_card_cache[key].copy()
 
 
-def load_card_content_np(source: str, size_key: str, width: int, demo: bool) -> np.ndarray:
+_VIDEO_FRAME_COUNT = 12
+_video_frames_cache: dict[tuple[str, int, int, int], list[np.ndarray]] = {}
+
+
+def load_card_content_np(source: str, size_key: str, width: int, demo: bool,
+                         frame_index: int = 0) -> np.ndarray:
     if demo:
         return make_demo_card_np(size_key, width)
 
@@ -400,8 +480,8 @@ def load_card_content_np(source: str, size_key: str, width: int, demo: bool) -> 
     if path.exists() and path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
         img = Image.open(path).convert("RGB")
     elif path.exists() and path.suffix.lower() in (".mp4", ".mov", ".mkv", ".webm"):
-        # Extrait une frame à 1s (ou au milieu) de la vidéo via ffmpeg
-        img = _extract_video_frame(path, size_key, width)
+        frames = _extract_video_frames(path, size_key, width)
+        img = Image.fromarray(frames[frame_index % len(frames)], mode="RGB")
     else:
         img = Image.new("RGB", (400, 500), (200, 200, 200))
 
@@ -419,9 +499,7 @@ def load_card_content_np(source: str, size_key: str, width: int, demo: bool) -> 
     return np.array(img, dtype=np.uint8)
 
 
-def _extract_video_frame(video_path: Path, size_key: str, width: int) -> Image.Image:
-    """Extrait une frame JPEG d'une vidéo via ffmpeg et retourne un Image RGB."""
-    import subprocess, tempfile
+def _card_dimensions(size_key: str, width: int) -> tuple[int, int]:
     if size_key == "small":
         cw = int(CARD_SMALL_WIDTH * width / 1080)
         ch = cw
@@ -431,22 +509,44 @@ def _extract_video_frame(video_path: Path, size_key: str, width: int) -> Image.I
     else:
         cw = int(CARD_MEDIUM_WIDTH * width / 1080)
         ch = int(cw * 1.25)
+    return cw, ch
+
+
+def _extract_video_frames(video_path: Path, size_key: str, width: int) -> list[np.ndarray]:
+    """Pré-extrait une courte séquence de frames pour animer une carte vidéo."""
+    cw, ch = _card_dimensions(size_key, width)
+    key = (str(video_path), size_key, width, _VIDEO_FRAME_COUNT)
+    if key in _video_frames_cache:
+        return _video_frames_cache[key]
+
+    fallback = np.full((ch, cw, 3), 200, dtype=np.uint8)
     try:
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            tmp_path = tmp.name
-        # Prend une frame à 1s (ou 0.5s si courte), puis on redimensionne ensuite via ImageOps.fit
-        subprocess.run(
-            ["ffmpeg", "-y", "-v", "error", "-ss", "1.0", "-i", str(video_path),
-             "-frames:v", "1", "-q:v", "2", tmp_path],
-            capture_output=True, timeout=30,
+        vf = (
+            f"fps=6,scale={cw}:{ch}:force_original_aspect_ratio=increase,"
+            f"crop={cw}:{ch}"
         )
-        if Path(tmp_path).exists() and Path(tmp_path).stat().st_size > 0:
-            img = Image.open(tmp_path).convert("RGB")
-            Path(tmp_path).unlink(missing_ok=True)
-            return img
-    except Exception:
+        proc = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", str(video_path), "-t", "2.0",
+             "-vf", vf, "-frames:v", str(_VIDEO_FRAME_COUNT),
+             "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+            capture_output=True, timeout=30, check=False,
+        )
+        frame_size = cw * ch * 3
+        raw = proc.stdout
+        frames = [
+            np.frombuffer(raw[offset:offset + frame_size], dtype=np.uint8).reshape(ch, cw, 3).copy()
+            for offset in range(0, len(raw) - frame_size + 1, frame_size)
+        ]
+        if frames:
+            while len(frames) < _VIDEO_FRAME_COUNT:
+                frames.append(frames[-1].copy())
+            _video_frames_cache[key] = frames[:_VIDEO_FRAME_COUNT]
+            return _video_frames_cache[key]
+    except (OSError, subprocess.SubprocessError, ValueError):
         pass
-    return Image.new("RGB", (400, 500), (200, 200, 200))
+
+    _video_frames_cache[key] = [fallback.copy() for _ in range(_VIDEO_FRAME_COUNT)]
+    return _video_frames_cache[key]
 
 
 # --------------------------------------------------------------------------- #
@@ -460,9 +560,9 @@ _card_zoom_cache: dict[tuple, np.ndarray] = {}
 
 
 def render_card_sprite_np(source: str, size_key: str, width: int, palette_bg: str,
-                          demo: bool) -> np.ndarray:
+                          demo: bool, frame_index: int = 0) -> np.ndarray:
     """Sprite carte RGBA (h, w, 4) avec masque, ombre, contenu (zoom=1)."""
-    key = (source, size_key, width, palette_bg, demo)
+    key = (source, size_key, width, palette_bg, demo, frame_index)
     if key in _card_sprite_cache:
         return _card_sprite_cache[key]
 
@@ -477,7 +577,7 @@ def render_card_sprite_np(source: str, size_key: str, width: int, palette_bg: st
         ch = int(cw * 1.25)
 
     radius = int(cw * CARD_RADIUS_RATIO)
-    content = load_card_content_np(source, size_key, width, demo)
+    content = load_card_content_np(source, size_key, width, demo, frame_index)
 
     # Canvas RGBA
     card = np.zeros((ch, cw, 4), dtype=np.uint8)
@@ -509,13 +609,13 @@ def render_card_sprite_np(source: str, size_key: str, width: int, palette_bg: st
 
 
 def get_zoomed_card_sprite(source: str, size_key: str, width: int, palette_bg: str,
-                           demo: bool, zoom: float) -> np.ndarray:
+                           demo: bool, zoom: float, frame_index: int = 0) -> np.ndarray:
     """Retourne le sprite carte avec zoom appliqué (cache par zoom arrondi)."""
-    key = (source, size_key, width, palette_bg, demo, round(zoom, 2))
+    key = (source, size_key, width, palette_bg, demo, round(zoom, 2), frame_index)
     if key in _card_zoom_cache:
         return _card_zoom_cache[key]
 
-    base = render_card_sprite_np(source, size_key, width, palette_bg, demo)
+    base = render_card_sprite_np(source, size_key, width, palette_bg, demo, frame_index)
     if abs(zoom - 1.0) < 0.005:
         _card_zoom_cache[key] = base
         return base
@@ -575,7 +675,9 @@ def find_active_card(tl: Timeline, t: float) -> CardEvent | None:
 def compute_element_transform(f: int, enter_side: str, exit_side: str,
                               start_frame: int, end_frame: int,
                               entry_frames: int, exit_frames: int,
-                              slide_px: int) -> tuple[float, float, float]:
+                              slide_px: int, motion_style: str = "premium") -> tuple[float, float, float]:
+    style = get_motion_style(motion_style)
+    slide_px = style.card_slide if slide_px == CARD_ENTRY_SLIDE else slide_px
     rel = f - start_frame
     side = 1 if enter_side == "right" else -1
     scale_val = 1.0
@@ -584,8 +686,8 @@ def compute_element_transform(f: int, enter_side: str, exit_side: str,
 
     if rel < entry_frames:
         te = rel / entry_frames
-        ease = ease_out_back(te)
-        scale_val = 0.55 + 0.45 * ease
+        ease = entry_progress(te, style)
+        scale_val = 0.96 + 0.04 * ease if style.name == "premium" else 0.90 + 0.10 * ease
         opacity = ease_out_cubic(min(te * entry_frames / 6.0, 1.0)) if entry_frames > 6 else ease_out_cubic(te)
         offset_x = side * slide_px * (1.0 - ease_out_cubic(te))
         return (scale_val, offset_x, opacity)
@@ -596,8 +698,9 @@ def compute_element_transform(f: int, enter_side: str, exit_side: str,
     exit_rel = f - end_frame + exit_frames
     if exit_rel < exit_frames:
         te = exit_rel / exit_frames
-        opacity = ease_in_cubic(1.0 - te)
-        offset_x = side * slide_px * ease_in_cubic(te)
+        progress = exit_progress(te, style)
+        opacity = 1.0 - progress
+        offset_x = side * slide_px * progress
         return (1.0, offset_x, opacity)
 
     return (1.0, 0.0, 0.0)
@@ -610,11 +713,16 @@ def compute_element_transform(f: int, enter_side: str, exit_side: str,
 def render_timeline(tl: Timeline, mix_path: Path, out_path: Path, width: int,
                     height: int, demo: bool = False, debug: bool = False,
                     invert_at: float | None = None, glitch_frames: int = GLITCH_FRAMES_DEFAULT,
-                    nvenc: bool = False) -> None:
+                    nvenc: bool = False, target_lufs: float = -14.0,
+                    motion_style: str = "premium", transition: str = "glitch") -> None:
     fps = FPS
     invert_frame = int(round(tl.invert.t * fps)) if tl.invert else -1
-    glitch_start = invert_frame + 1 if invert_frame >= 0 else -1
-    glitch_end = invert_frame + glitch_frames if invert_frame >= 0 else -1
+    transition_start = (
+        invert_frame if transition in ("flash", "wipe", "zoom", "blur") else invert_frame + 1
+    ) if invert_frame >= 0 else -1
+    transition_end = (
+        invert_frame + 2 if transition in ("flash", "wipe", "zoom", "blur") else invert_frame + glitch_frames
+    ) if invert_frame >= 0 else -1
 
     total_frames = tl.frames
     start_time = time.time()
@@ -630,9 +738,9 @@ def render_timeline(tl: Timeline, mix_path: Path, out_path: Path, width: int,
         "-i", str(mix_path),
         "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p",
         "-c:v", "h264_nvenc" if nvenc else "libx264",
-        "-preset", "medium", "-crf", "18", "-profile:v", "high",
+        "-preset", "veryfast" if width <= PREVIEW_WIDTH else "medium", "-crf", "18", "-profile:v", "high",
         "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
-        "-af", "loudnorm=I=-14:TP=-1.5:LRA=11,alimiter=limit=0.89",
+        "-af", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11,alimiter=limit=0.89",
         "-c:a", "aac", "-b:a", "192k", "-ar", str(AUDIO_SAMPLE_RATE),
         "-t", str(tl.duration), "-movflags", "+faststart", str(out_path),
     ]
@@ -641,6 +749,23 @@ def render_timeline(tl: Timeline, mix_path: Path, out_path: Path, width: int,
 
     word_start_frames = {id(w): int(round(w.start * fps)) for w in tl.words}
     card_start_frames = {id(c): int(round(c.start * fps)) for c in tl.cards}
+
+    # Indexation une fois par rendu : évite de reparcourir tous les événements
+    # à chaque frame, surtout sur les scripts longs.
+    active_words: list[WordEvent | None] = [None] * total_frames
+    active_cards: list[CardEvent | None] = [None] * total_frames
+    for w in tl.words:
+        start = max(0, int(math.floor(w.start * fps)))
+        end = min(total_frames - 1, int(math.ceil(w.end * fps)))
+        for frame in range(start, end + 1):
+            if active_words[frame] is None:
+                active_words[frame] = w
+    for c in tl.cards:
+        start = max(0, int(math.floor(c.start * fps)))
+        end = min(total_frames - 1, int(math.ceil((c.start + c.duration) * fps)))
+        for frame in range(start, end + 1):
+            if active_cards[frame] is None:
+                active_cards[frame] = c
 
     card_index_counter = 0
 
@@ -655,8 +780,8 @@ def render_timeline(tl: Timeline, mix_path: Path, out_path: Path, width: int,
         # Fond (numpy)
         canvas = draw_background_np(f, width, height, palette)
 
-        active_word = find_active_word(tl, t)
-        active_card = find_active_card(tl, t)
+        active_card = active_cards[f]
+        active_word = None if active_card is not None else active_words[f]
 
         cta_active = bool(tl.cta and t >= tl.cta.start)
 
@@ -668,14 +793,19 @@ def render_timeline(tl: Timeline, mix_path: Path, out_path: Path, width: int,
 
             scale_val, offset_x, opacity = compute_element_transform(
                 f, c.enter_side, c.exit_side, start_f, end_f,
-                CARD_ENTRY_FRAMES, CARD_EXIT_FRAMES, CARD_ENTRY_SLIDE)
+                CARD_ENTRY_FRAMES, CARD_EXIT_FRAMES, CARD_ENTRY_SLIDE,
+                motion_style=motion_style)
 
-            # Zoom figé à 1.0 pour éviter le tremblement des bords arrondis des B-rolls
-            zoom = 1.0
+            # Mouvement de caméra léger et séquence de frames pour les B-rolls vidéo.
+            zoom = card_zoom_scale(f)
+            frame_index = 0
+            if Path(c.source).suffix.lower() in (".mp4", ".mov", ".mkv", ".webm"):
+                clip_progress = min(max((t - c.start) / 2.0, 0.0), 1.0)
+                frame_index = int(round(clip_progress * (_VIDEO_FRAME_COUNT - 1)))
             float_y = card_float_y(f)
 
             card_sprite = get_zoomed_card_sprite(c.source, c.size, width, palette.bg,
-                                                  demo, zoom)
+                                                  demo, zoom * scale_val, frame_index)
 
             if opacity < 1.0:
                 # Applique l'opacité sur le alpha
@@ -697,10 +827,12 @@ def render_timeline(tl: Timeline, mix_path: Path, out_path: Path, width: int,
 
             if rel < WORD_ENTRY_FRAMES:
                 te = rel / WORD_ENTRY_FRAMES
-                ease = ease_out_back(te)
-                scale_val = 0.90 + 0.10 * ease
+                style = get_motion_style(motion_style)
+                ease = entry_progress(te, style)
+                scale_val = 0.96 + 0.04 * ease if style.name == "premium" else 0.90 + 0.10 * ease
                 opacity_word = ease_out_cubic(te)
-                offset_x = (1 if w.enter_side == "right" else -1) * WORD_ENTRY_SLIDE * width / 1080 * (1.0 - ease_out_cubic(te))
+                word_slide = style.word_slide * width / 1080
+                offset_x = (1 if w.enter_side == "right" else -1) * word_slide * (1.0 - ease_out_cubic(te))
             else:
                 scale_val = word_breath_scale(f)
                 opacity_word = 1.0
@@ -729,6 +861,13 @@ def render_timeline(tl: Timeline, mix_path: Path, out_path: Path, width: int,
             ty = int(TEXT_POS_Y * width / 1080 + float_y)
             paste_x = tx - sprite_np.shape[1] // 2
             paste_y = ty - sprite_np.shape[0] // 2
+
+            if w.size_level in ("emphasis", "strong"):
+                accent_progress = 1.0 if rel >= WORD_ENTRY_FRAMES else ease_out_cubic(rel / max(1, WORD_ENTRY_FRAMES))
+                accent_color = hex_to_rgb("#FF5A36" if palette.bg == "#FDFDFD" else "#35D0FF")
+                accent = make_motion_accent_np(sprite_np.shape[1], sprite_np.shape[0], accent_color, accent_progress)
+                accent_y = paste_y + sprite_np.shape[0] - accent.shape[0] // 2
+                composite_sprite(canvas, accent, paste_x, accent_y, opacity=0.75)
 
             composite_sprite(canvas, sprite_np, paste_x, paste_y, opacity=1.0)
 
@@ -767,9 +906,19 @@ def render_timeline(tl: Timeline, mix_path: Path, out_path: Path, width: int,
 
             composite_sprite(canvas, sprite_np, paste_x, paste_y, opacity=1.0)
 
-        # Glitch
-        if glitch_start >= 0 and glitch_start <= f <= glitch_end:
-            canvas = apply_glitch_np(canvas, f, invert_frame, glitch_frames, width)
+        # Transition autour de l'inversion.
+        if transition_start >= 0 and transition_start <= f <= transition_end:
+            offset = f - invert_frame
+            if transition == "flash":
+                canvas = apply_flash_np(canvas, offset)
+            elif transition == "wipe":
+                canvas = apply_wipe_np(canvas, offset)
+            elif transition == "zoom":
+                canvas = apply_zoom_cut_np(canvas, offset)
+            elif transition == "blur":
+                canvas = apply_blur_reveal_np(canvas, offset)
+            elif transition == "glitch":
+                canvas = apply_glitch_np(canvas, f, invert_frame, glitch_frames, width)
 
         # Écriture
         proc.stdin.write(canvas.tobytes())

@@ -36,6 +36,17 @@ PEAK_DBS = {
     "cta": -20.0,
 }
 
+# Niveau relatif par événement. Les impacts importants restent audibles sans
+# laisser les ticks prendre le dessus sur la voix.
+EVENT_GAIN_DB = {
+    "tick": -2.0,
+    "whoosh_in": 0.0,
+    "land": 0.0,
+    "whoosh_out": -1.0,
+    "invert": 0.0,
+    "cta": -1.0,
+}
+
 # Plus le nombre est petit, plus la priorité est haute (gardé en cas de bouillie)
 PRIORITY = {
     "invert": 0,
@@ -235,6 +246,32 @@ _sfx_cache: dict[str, SfxSample] | None = None
 
 def _load_from_assets(name: str) -> np.ndarray | None:
     """Charge un SFX depuis assets/sfx/ s'il existe. tick -> tick_0.wav .. tick_3.wav."""
+    def read_wav(path) -> np.ndarray:
+        import wave
+
+        with wave.open(str(path), "rb") as w:
+            n = w.getnframes()
+            channels = w.getnchannels()
+            source_rate = w.getframerate()
+            data = w.readframes(n)
+        arr = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+        if channels == 2:
+            arr = arr.reshape(-1, 2)
+        else:
+            arr = np.column_stack([arr, arr])
+        if source_rate != AUDIO_SAMPLE_RATE:
+            gcd = np.gcd(source_rate, AUDIO_SAMPLE_RATE)
+            up = AUDIO_SAMPLE_RATE // gcd
+            down = source_rate // gcd
+            arr = signal.resample_poly(arr, up, down, axis=0).astype(np.float32)
+        edge = min(int(0.004 * AUDIO_SAMPLE_RATE), len(arr) // 2)
+        if edge > 0:
+            env = np.ones(len(arr), dtype=np.float32)
+            env[:edge] = np.linspace(0.0, 1.0, edge, dtype=np.float32)
+            env[-edge:] = np.linspace(1.0, 0.0, edge, dtype=np.float32)
+            arr *= env[:, None]
+        return arr
+
     if name == "tick":
         variants = []
         for i in range(4):
@@ -242,31 +279,13 @@ def _load_from_assets(name: str) -> np.ndarray | None:
             if not path.exists():
                 path = SFX_DIR / f"tick{i}.wav"
             if path.exists():
-                import wave
-                with wave.open(str(path), "rb") as w:
-                    n = w.getnframes()
-                    data = w.readframes(n)
-                    arr = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
-                    if w.getnchannels() == 2:
-                        arr = arr.reshape(-1, 2)
-                    else:
-                        arr = np.column_stack([arr, arr])
-                variants.append(arr)
+                variants.append(read_wav(path))
         if len(variants) == 4:
             return variants  # type: ignore[return-value]
         return None
     path = SFX_DIR / f"{name}.wav"
     if path.exists():
-        import wave
-        with wave.open(str(path), "rb") as w:
-            n = w.getnframes()
-            data = w.readframes(n)
-            arr = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
-            if w.getnchannels() == 2:
-                arr = arr.reshape(-1, 2)
-            else:
-                arr = np.column_stack([arr, arr])
-        return arr
+        return read_wav(path)
     return None
 
 
@@ -404,6 +423,7 @@ def build_sfx_bus(sfx_events: list, total_samples: int) -> np.ndarray:
             "start": start_sample,
             "data": sx.data,
             "pan": ev.pan,
+            "gain_db": EVENT_GAIN_DB.get(base_name, 0.0) + getattr(ev, "gain_db", 0.0),
             "priority": PRIORITY.get(base_name, 9),
         })
 
@@ -428,8 +448,10 @@ def build_sfx_bus(sfx_events: list, total_samples: int) -> np.ndarray:
                     kept.remove(worst)
                     kept.append(p)
 
-    # --- Mixage dans le bus ---
-    bus = np.zeros((total_samples, 2), dtype=np.float32)
+    # --- Mixage dans deux sous-bus ---
+    # Les whooshes/ticks sont filtrés, mais les impacts conservent leur assise.
+    filtered_bus = np.zeros((total_samples, 2), dtype=np.float32)
+    impact_bus = np.zeros((total_samples, 2), dtype=np.float32)
     for p in kept:
         data = p["data"]
         start = p["start"]
@@ -442,18 +464,19 @@ def build_sfx_bus(sfx_events: list, total_samples: int) -> np.ndarray:
         d1 = d0 + (e0 - s0)
         seg = data[d0:d1]
         pan = p["pan"]
-        seg_stereo = _apply_pan(seg[:, 0], pan) if seg.ndim == 2 else seg
-        if seg_stereo.ndim == 1:
-            seg_stereo = _apply_pan(seg_stereo, pan)
-        bus[s0:e0] += seg_stereo
+        gain = 10.0 ** (p.get("gain_db", 0.0) / 20.0)
+        if seg.ndim == 2:
+            # Préserve l'image stéréo de l'asset, puis applique un pan doux.
+            angle = (pan + 1.0) * np.pi / 4.0
+            seg_stereo = seg * np.array([np.cos(angle), np.sin(angle)], dtype=np.float32)
+        else:
+            seg_stereo = _apply_pan(seg, pan)
+        seg_stereo = seg_stereo * gain
+        target = impact_bus if p["name"] in ("land", "invert") else filtered_bus
+        target[s0:e0] += seg_stereo
 
-    # --- Passe-haut 150 Hz sur le bus, sauf invert et land qui gardent leurs basses ---
-    # On filtre le bus entier, puis on rajoute les composantes basses de invert/land
-    # (simplification : on filtre tout le bus, les invert/land ont peu de basses critiques sauf impact)
-    # Pour respecter la spec, on filtre le bus et c'est tout (invert/land passent aussi mais c'est acceptable).
-    # Une approche plus fidèle : filtrer uniquement les non-invert/land. Comme tout est mélangé,
-    # on applique le HPF global (impact de invert garde assez d'énergie).
+    # Passe-haut uniquement sur les effets non graves.
     sos = signal.butter(2, 150.0, btype="high", fs=AUDIO_SAMPLE_RATE, output="sos")
-    bus = signal.sosfilt(sos, bus, axis=0).astype(np.float32)
+    filtered_bus = signal.sosfilt(sos, filtered_bus, axis=0).astype(np.float32)
 
-    return bus
+    return (filtered_bus + impact_bus).astype(np.float32)

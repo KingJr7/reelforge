@@ -10,6 +10,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from audio_mixer import measure_audio_stats
+
 
 def run(cmd: list[str]) -> str:
     res = subprocess.run(cmd, capture_output=True, text=True)
@@ -35,6 +37,32 @@ def probe_audio(video: Path) -> dict:
     ])
     import json as _json
     return _json.loads(out)["streams"][0]
+
+
+def load_audio_float(path: Path) -> np.ndarray:
+    result = subprocess.run([
+        "ffmpeg", "-v", "error", "-i", str(path), "-f", "f32le",
+        "-acodec", "pcm_f32le", "-ar", "48000", "-ac", "2", "-",
+    ], capture_output=True, check=True)
+    return np.frombuffer(result.stdout, dtype=np.float32).reshape(-1, 2)
+
+
+def check_audio_buses(bus_paths: dict[str, Path]) -> bool:
+    """Contrôle séparé des bus exportés par make_reel."""
+    ok = True
+    for name, path in bus_paths.items():
+        if not path.exists():
+            print(f"  [AUDIO] {name}: absent ({path}) -> SKIP")
+            continue
+        stats = measure_audio_stats(load_audio_float(path))
+        bus_ok = np.isfinite(list(stats.values())).all() and stats["peak_db"] <= 0.1
+        ok = ok and bool(bus_ok)
+        print(
+            f"  [AUDIO] {name}: RMS {stats['rms_db']:.1f} dB, "
+            f"peak {stats['peak_db']:.1f} dB, crest {stats['crest_db']:.1f} dB: "
+            f"{'PASS' if bus_ok else 'FAIL'}"
+        )
+    return ok
 
 
 def check_resolution_fps_codec(video: Path, preview: bool) -> bool:
@@ -94,6 +122,37 @@ def check_no_static_frames(video: Path, preview: bool) -> bool:
 
     ok = max_identical <= 3
     print(f"  [2] Max frames identiques consécutives : {max_identical} (max 3): {'PASS' if ok else 'FAIL'}")
+    return ok
+
+
+def check_safe_zones(video: Path, preview: bool) -> bool:
+    """Détecte une forte densité de contours dans les bandes de chrome plateforme."""
+    width, height = (540, 960) if preview else (1080, 1920)
+    small_w, small_h = width // 4, height // 4
+    result = subprocess.run([
+        "ffmpeg", "-v", "error", "-i", str(video), "-vf",
+        f"fps=2,scale={small_w}:{small_h},format=gray", "-f", "rawvideo", "-",
+    ], capture_output=True, check=True)
+    frame_size = small_w * small_h
+    frames = np.frombuffer(result.stdout, dtype=np.uint8)
+    if len(frames) < frame_size:
+        print("  [SAFE] Frames insuffisantes -> SKIP")
+        return True
+    frames = frames[: len(frames) // frame_size * frame_size].reshape(-1, small_h, small_w)
+    risks = {}
+    bands = {
+        "top_chrome": (slice(0, int(small_h * 0.08)), slice(None)),
+        "bottom_chrome": (slice(int(small_h * 0.90), None), slice(None)),
+        "left_chrome": (slice(None), slice(0, int(small_w * 0.04))),
+        "right_chrome": (slice(None), slice(int(small_w * 0.96), None)),
+    }
+    for name, (ys, xs) in bands.items():
+        band = frames[:, ys, xs].astype(np.int16)
+        edges = np.abs(np.diff(band, axis=-1)) > 32 if band.shape[-1] > 1 else np.zeros_like(band, dtype=bool)
+        risks[name] = float(edges.mean())
+    ok = max(risks.values()) < 0.28
+    details = ", ".join(f"{name}={value:.2f}" for name, value in risks.items())
+    print(f"  [SAFE] {details}: {'PASS' if ok else 'WARN'}")
     return ok
 
 
@@ -227,6 +286,10 @@ def main() -> None:
     p.add_argument("video", help="Fichier MP4 à vérifier")
     p.add_argument("--timeline", default=None, help="Fichier timeline.json")
     p.add_argument("--lufs", type=float, default=-14.0, help="Cible loudness")
+    p.add_argument("--voice", default=None, help="Bus voix WAV exporté")
+    p.add_argument("--bgm", default=None, help="Bus BGM WAV exporté")
+    p.add_argument("--sfx", default=None, help="Bus SFX WAV exporté")
+    p.add_argument("--safe-zones", action="store_true", help="Active l'analyse des zones à risque")
     args = p.parse_args()
 
     video = Path(args.video)
@@ -262,6 +325,15 @@ def main() -> None:
 
     r4 = check_loudness(video, args.lufs)
     results.append(r4)
+
+    if any((args.voice, args.bgm, args.sfx)):
+        buses = {name: Path(value) for name, value in {
+            "voice": args.voice, "bgm": args.bgm, "sfx": args.sfx,
+        }.items() if value}
+        results.append(check_audio_buses(buses))
+
+    if args.safe_zones:
+        results.append(check_safe_zones(video, preview))
 
     make_contact_sheet(video, video.parent / "contact_sheet.png")
 

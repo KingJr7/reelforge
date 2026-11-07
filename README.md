@@ -47,6 +47,34 @@ python verify.py out/demo.mp4 --timeline out/timeline.json
 python make_reel.py --script scripts/mon_sujet.txt --out out/mon_reel.mp4
 ```
 
+### Prototype motion design HTML
+
+Pour tester le nouveau moteur de scènes graphiques générées en HTML/CSS :
+
+```bash
+python3 html_motion_renderer.py --duration 6 --out out/html_motion_demo.mp4
+```
+
+Le backend est aussi disponible dans le pipeline principal :
+
+```bash
+python3 make_reel.py --script scripts/levelcash_v1_humain.txt --voice-file v1.mp3 \
+  --engine hybrid --html-template auto --preview --out out/levelcash_hybrid.mp4
+```
+
+`classic` reste le backend par défaut. `html` rend la scène HTML sur toute la durée ; `hybrid` combine une intro HTML avec le renderer classique en conservant la timeline audio complète. Templates disponibles : `auto`, `hero`, `numbers`, `split`, `cta`, `diagram`, `comparison`, `broll`.
+
+Pour choisir précisément les scènes HTML, utilisez un plan utilisateur :
+
+```bash
+python3 make_reel.py --script scripts/mon_sujet.txt --voice-file v1.mp3 \
+  --engine hybrid --scene-plan html-scene-plan.example.json --out out/custom.mp4
+```
+
+Le plan contient au moins deux fenêtres contiguës. Chaque fenêtre peut utiliser `html` ou `classic`, avec son propre template ; voir `html-scene-plan.example.json`.
+
+La page est évaluée frame par frame, capturée en PNG puis encodée avec FFmpeg. Le moteur utilise Playwright/Chromium si disponible et `wkhtmltoimage` en fallback.
+
 Première passe en `--preview` pour valider rapidement, puis rendu final en 1080×1920.
 
 ### Options CLI
@@ -91,6 +119,21 @@ python verify.py out/reel.mp4 --timeline out/timeline.json
 ```
 
 Contrôle : résolution, fps, codec, durée, pas d'images figées, inversion claire→sombre, loudness (-14 LUFS), planche contact.
+
+## Publication TikTok
+
+Le générateur et la publication sont séparés. Pour publier un MP4 déjà généré localement, installez les dépendances optionnelles :
+
+```bash
+pip install -r requirements-publish.txt
+playwright install chromium
+python3 tiktok_publish.py \
+  --video out/levelcash_v1_production_final.mp4 \
+  --description "Mon nouveau Reel #fyp #business" \
+  --cookies-file /chemin/local/cookies.txt
+```
+
+Le fichier cookies doit rester local et ignoré par Git. En CI, utilisez plutôt le secret `TIKTOK_SESSIONID` ou `TIKTOK_COOKIES_B64`. Le workflow manuel `.github/workflows/publish-tiktok.yml` télécharge un artifact d'un run précédent et publie uniquement le MP4 choisi, sans cookie dans le dépôt.
 
 ## Structure
 

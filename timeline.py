@@ -48,6 +48,7 @@ class SfxEvent:
     name: str        # 'tick' | 'whoosh_in' | 'land' | 'whoosh_out' | 'invert' | 'cta'
     t: float         # secondes, instant de l'attaque visuelle
     pan: float       # -1 (gauche) à 1 (droite), 0 = centré
+    gain_db: float = 0.0
 
 
 @dataclass
@@ -77,7 +78,8 @@ class Timeline:
             "invert": {"t": self.invert.t} if self.invert else None,
             "cta": {"text": self.cta.text, "start": self.cta.start} if self.cta else None,
             "sfx": [
-                {"name": s.name, "t": s.t, "pan": s.pan} for s in self.sfx
+                {"name": s.name, "t": s.t, "pan": s.pan, "gain_db": s.gain_db}
+                for s in self.sfx
             ],
         }
 
@@ -196,7 +198,9 @@ def build_timeline(
 
     # --- 3. Inversion par défaut à 50 % si pas de [INVERT] ---
     if invert_event is None and fin_voix > 0:
-        invert_event = InvertEvent(t=fin_voix * DEFAULT_INVERT_AT)
+        ratio = DEFAULT_INVERT_AT if invert_at is None else invert_at
+        ratio = min(max(ratio, 0.0), 1.0)
+        invert_event = InvertEvent(t=fin_voix * ratio)
 
     # --- 4. Retire les mots cachés par les cartes ---
     visible_words = [we for we in word_events if we.start not in hidden_word_starts]
