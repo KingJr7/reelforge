@@ -69,4 +69,3 @@ jobs:
           path: |
             out/test_pocket_tts.mp4
             pocket-tts-render.log
-            pocket-tts-install.log
