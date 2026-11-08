@@ -140,7 +140,35 @@ jobs:
             --out out/levelcash_delestage.mp4 \
             --glitch-frames 4
 
-      - name: Upload video artifacts
+      - name: Install Pocket-TTS (Kyutai Labs)
+        run: |
+          pip3 install pocket-tts || echo "WARNING: pocket-tts install failed"
+
+      - name: Test Pocket-TTS voice generation
+        run: |
+          python3 make_reel.py \
+            --script scripts/test_pocket_tts.txt \
+            --tts pocket-tts \
+            --assemblyai \
+            --out out/test_pocket_tts.mp4 \
+            --glitch-frames 4
+        env:
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+
+      - name: Verify Pocket-TTS output
+        run: |
+          python3 -c "
+import subprocess, json
+out = subprocess.run(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height,r_frame_rate,codec_name,duration','-of','json','out/test_pocket_tts.mp4'],capture_output=True,text=True)
+s = json.loads(out.stdout)['streams'][0]
+print(f'Video: {s[\"width\"]}x{s[\"height\"]} {s[\"r_frame_rate\"]} {s[\"codec_name\"]} {s[\"duration\"]}s')
+out2 = subprocess.run(['ffprobe','-v','error','-select_streams','a:0','-show_entries','stream=codec_name,duration','-of','json','out/test_pocket_tts.mp4'],capture_output=True,text=True)
+a = json.loads(out2.stdout)['streams'][0]
+print(f'Audio: {a[\"codec_name\"]} {a[\"duration\"]}s')
+print(f'Duration match: {abs(float(s[\"duration\"]) - float(a[\"duration\"])) < 0.1}')
+          "
+
+      - name: Upload all video artifacts
         uses: actions/upload-artifact@v4
         with:
           name: levelcash-videos
