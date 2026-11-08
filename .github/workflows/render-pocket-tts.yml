@@ -2,7 +2,12 @@
 name: Test Pocket-TTS + Moteur Classique
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      test_name:
+        description: 'Nom du test'
+        required: false
+        default: 'pocket-tts-test'
   push:
     branches: [main]
 
