@@ -8,26 +8,42 @@ on:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    container:
-      image: mcr.microsoft.com/playwright:v1.52.0-focal
-      options: --user root
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug environment
+        run: |
+          echo "Node: $(node --version)"
+          echo "FFmpeg: $(which ffmpeg || echo 'NOT FOUND')"
+          echo "NPM: $(npm --version)"
+
       - name: Install system dependencies
         run: |
-          apt-get update && apt-get install -y ffmpeg
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
-      - name: Build video.json (script + words -> timeline)
+      - name: Install Playwright + Chromium
+        run: |
+          npm i playwright
+          npx playwright install chromium --with-deps
+
+      - name: Verify installation
+        run: |
+          echo "Playwright: $(node -e "require('playwright'); console.log('OK')")"
+          echo "FFmpeg: $(ffmpeg -version | head -1)"
+          ls -la motion-test/
+
+      - name: Build video.json
         run: |
           node motion-kit/scripts/build.mjs motion-test/script.json motion-test/words.json motion-test/video.json
+          cat motion-test/video.json
 
-      - name: Render MP4 (HTML -> frames -> FFmpeg)
+      - name: Render MP4
         run: |
           node motion-kit/render.mjs motion-test/video.json out/levelcash_v1_motion.mp4 --scale 1.875
 
-      - name: Upload video artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: levelcash-v1-motion
