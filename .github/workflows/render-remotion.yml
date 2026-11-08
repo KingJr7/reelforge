@@ -17,6 +17,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: remotion-bonne-piste/package-lock.json
 
       - name: Install system dependencies
         run: |
@@ -26,9 +27,14 @@ jobs:
       - name: Install Remotion dependencies
         run: |
           cd remotion-bonne-piste
-          npm ci
+          npm install
 
-      - name: Build video.json (script + words -> timeline)
+      - name: Verify installation
+        run: |
+          cd remotion-bonne-piste
+          ls node_modules/.bin/remotion && node -e "require('react'); console.log('React OK')"
+
+      - name: Build video.json
         run: |
           cd remotion-bonne-piste
           node src/build.mjs script.json words.json video.json
