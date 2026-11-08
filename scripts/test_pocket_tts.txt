@@ -1,0 +1,6 @@
+Coucou, c'est un test de Pocket-TTS. [PAUSE 0.3]
+Cette phrase est générée avec le moteur Kyutai Labs directement depuis GitHub Actions.
+Pas besoin de carte bancaire, pas de clé API ElevenLabs.
+Le rendu utilise le moteur classique Reelforce avec synthèse vocale locale.
+Si tu entends cette voix, c'est que ça marche. [BROLL: person using smartphone | 2.0s | medium]
+Test terminé. Merci d'avoir regardé. [CTA: COMMENTEZ]

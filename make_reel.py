@@ -84,6 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--list-voices", action="store_true")
     p.add_argument("--nvenc", action="store_true")
     p.add_argument("--voice-file", default=None, help="Fichier MP3 de voix pré-généré (écrase ElevenLabs)")
+    p.add_argument("--tts", choices=["elevenlabs", "pocket-tts"], default="elevenlabs", help="Moteur de synthèse vocale (défaut: elevenlabs)")
     p.add_argument("--assemblyai", action="store_true", help="Utiliser AssemblyAI pour les vrais timestamps des mots")
     p.add_argument("--auto-broll", action="store_true", help="Insère automatiquement des B-rolls dans les gaps sans carte")
     return p
@@ -256,6 +257,9 @@ def main() -> None:
         wavfile.write(str(VOICE_CACHE_DIR / "voice_file_input.wav"), AUDIO_SAMPLE_RATE, audio)
         voice_path = VOICE_CACHE_DIR / "voice_file_input.wav"
         print(f"  Voix importée : {voice_duration:.2f}s, {len(word_times)} mots avec timestamps")
+    elif args.tts == "pocket-tts":
+        voice_duration, word_times = generate_voice_pocket_tts(script_text, parsed.words, args.assemblyai)
+        print(f"  Voix Pocket-TTS : {voice_duration:.2f}s, {len(word_times)} mots avec timestamps")
     else:
         voice_id = os.getenv("ELEVENLABS_VOICE_ID", "")
         model_id = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
@@ -423,5 +427,130 @@ def main() -> None:
     print("  Terminé.")
 
 
-if __name__ == "__main__":
-    main()
+def generate_voice_pocket_tts(script_text: str, words: list, use_assemblyai: bool) -> tuple[float, list[tuple[float, float]]]:
+    """Génère la voix avec Pocket-TTS (Kyutai Labs) et retourne (durée, word_times)."""
+    import re as _re
+    import subprocess
+    import sys
+
+    VOICE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    wav_path = VOICE_CACHE_DIR / "pocket_tts_voice.wav"
+
+    # --- 1. S'assurer que pocket-tts est installé ---
+    try:
+        import pocket_tts  # noqa: F401
+    except ImportError:
+        print("  Installation de pocket-tts (Kyutai Labs)...")
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "pocket-tts", "--quiet"],
+            check=True,
+            timeout=300,
+        )
+
+    # --- 2. Générer le fichier audio ---
+    generated = False
+    # Tentative 1 : API objet TTS().to_file()
+    try:
+        from pocket_tts import TTS
+
+        tts = TTS()
+        tts.to_file(script_text, str(wav_path))
+        generated = True
+        print("  Pocket-TTS : génération via TTS().to_file()")
+    except Exception as e:
+        print(f"  Pocket-TTS : TTS().to_file() échoué ({e})")
+
+    # Tentative 2 : fonction generate()
+    if not generated:
+        try:
+            from pocket_tts import generate
+
+            generate(script_text, str(wav_path))
+            generated = True
+            print("  Pocket-TTS : génération via generate()")
+        except Exception as e:
+            print(f"  Pocket-TTS : generate() échoué ({e})")
+
+    # Tentative 3 : CLI pocket-tts
+    if not generated:
+        try:
+            subprocess.run(
+                ["pocket-tts", "--text", script_text, "--output", str(wav_path)],
+                check=True,
+                timeout=300,
+            )
+            generated = True
+            print("  Pocket-TTS : génération via CLI pocket-tts")
+        except Exception as e:
+            print(f"  Pocket-TTS : CLI échoué ({e})")
+
+    if not generated or not wav_path.exists() or wav_path.stat().st_size == 0:
+        raise RuntimeError(
+            "Pocket-TTS n'a pas pu générer le fichier audio. "
+            "Vérifiez que pocket-tts est correctement installé et accessible."
+        )
+
+    # --- 3. Décoder le WAV ---
+    audio = decode_voice(wav_path)
+    voice_duration = len(audio) / AUDIO_SAMPLE_RATE
+
+    # --- 4. Timestamps des mots ---
+    n_words = len(words)
+    word_times = []
+    if n_words > 0:
+        slot = voice_duration / n_words
+        for i in range(n_words):
+            start = i * slot
+            end = min((i + 1) * slot, voice_duration)
+            word_times.append((start, end))
+
+    # Ré-alignement AssemblyAI si demandé
+    if use_assemblyai:
+        api_key = os.getenv("ASSEMBLYAI_API_KEY", "")
+        if api_key:
+            try:
+                print("  Ré-alignement AssemblyAI sur la voix Pocket-TTS...")
+                from assemblyai_client import transcribe_words
+
+                aa_words = transcribe_words(wav_path, api_key)
+                n_aa = len(aa_words)
+                if n_aa > 0 and n_words > 0:
+
+                    def _clean(w: str) -> str:
+                        return _re.sub(r"[^\wàâäéèêëîïôöùûüçñ]", "", w.lower())
+
+                    script_clean = [_clean(w.text) for w in words]
+                    aa_clean = [_clean(t) for _, _, t in aa_words]
+
+                    new_word_times = []
+                    j = 0
+                    for i in range(n_words):
+                        while j < n_aa and aa_clean[j] and aa_clean[j] != script_clean[i]:
+                            j += 1
+                        if j < n_aa and aa_clean[j] == script_clean[i]:
+                            start, end, _t = aa_words[j]
+                            new_word_times.append((start, end))
+                            j += 1
+                        else:
+                            remaining_words = n_words - i
+                            remaining_aa = max(n_aa - j, 1)
+                            slot2 = (
+                                (voice_duration - (new_word_times[-1][1] if new_word_times else 0))
+                                / remaining_words
+                                if new_word_times
+                                else voice_duration / n_words
+                            )
+                            start = new_word_times[-1][1] if new_word_times else 0.0
+                            end = min(start + slot2, voice_duration)
+                            new_word_times.append((start, end))
+                    word_times = new_word_times
+                    print(f"  AssemblyAI : {n_aa} mots détectés, alignés sur {n_words} mots du script")
+            except Exception as e:
+                print(f"  AssemblyAI échec ({e}), maintien timestamps estimés", file=sys.stderr)
+        else:
+            print("  Clé ASSEMBLYAI_API_KEY manquante, maintien timestamps estimés", file=sys.stderr)
+
+    # --- 5. Sauvegarder dans le cache pour cohérence ---
+    wavfile.write(str(VOICE_CACHE_DIR / "voice_file_input.wav"), AUDIO_SAMPLE_RATE, audio)
+    return voice_duration, word_times
+
