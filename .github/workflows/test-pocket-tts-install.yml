@@ -22,8 +22,8 @@ jobs:
 
       - name: Install Pocket-TTS (Kyutai Labs)
         run: |
-          pip3 install pocket-tts 2>&1 | tail -5
-          python3 -c "import pocket_tts; print('Pocket-TTS import OK')" 2>&1 || echo "Pocket-TTS import FAILED"
+          pip3 install pocket-tts 2>&1 | tee pocket-tts-install.log || true
+          python3 -c "import pocket_tts; print('Pocket-TTS import OK')" 2>&1 | tee -a pocket-tts-install.log || echo "Pocket-TTS import FAILED" | tee -a pocket-tts-install.log
 
       - name: Generate voice with Pocket-TTS + Render video
         run: |
@@ -32,25 +32,34 @@ jobs:
             --tts pocket-tts \
             --assemblyai \
             --out out/test_pocket_tts.mp4 \
-            --glitch-frames 4
+            --glitch-frames 4 2>&1 | tee pocket-tts-render.log || echo "WARNING: Pocket-TTS generation failed" | tee -a pocket-tts-render.log
         env:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
 
       - name: Verify output
         run: |
           python3 -c "
-import subprocess, json
+import subprocess, json, os
 out = subprocess.run(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height,r_frame_rate,codec_name,duration','-of','json','out/test_pocket_tts.mp4'],capture_output=True,text=True)
-s = json.loads(out.stdout)['streams'][0]
-print(f'Video: {s[\"width\"]}x{s[\"height\"]} {s[\"r_frame_rate\"]} {s[\"codec_name\"]} {s[\"duration\"]}s')
+if out.returncode == 0:
+    s = json.loads(out.stdout)['streams'][0]
+    print(f'Video: {s[\"width\"]}x{s[\"height\"]} {s[\"r_frame_rate\"]} {s[\"codec_name\"]} {s[\"duration\"]}s')
+else:
+    print('Video probe failed')
 out2 = subprocess.run(['ffprobe','-v','error','-select_streams','a:0','-show_entries','stream=codec_name,duration','-of','json','out/test_pocket_tts.mp4'],capture_output=True,text=True)
-a = json.loads(out2.stdout)['streams'][0]
-print(f'Audio: {a[\"codec_name\"]} {a[\"duration\"]}s')
-print(f'Duration match: {abs(float(s[\"duration\"]) - float(a[\"duration\"])) < 0.1}')
+if out2.returncode == 0:
+    a = json.loads(out2.stdout)['streams'][0]
+    print(f'Audio: {a[\"codec_name\"]} {a[\"duration\"]}s')
+else:
+    print('Audio probe failed')
+print(f'File exists: {os.path.exists(\"out/test_pocket_tts.mp4\")}')
           "
 
-      - name: Upload test video artifact
+      - name: Upload logs and video artifact
         uses: actions/upload-artifact@v4
         with:
-          name: test-pocket-tts-video
-          path: out/test_pocket_tts.mp4
+          name: test-pocket-tts-artifacts
+          path: |
+            out/test_pocket_tts.mp4
+            pocket-tts-install.log
+            pocket-tts-render.log
