@@ -19,7 +19,7 @@ const total = Math.round(video.duration * fps);
 const from  = parseInt(flag("from", 0), 10), to = Math.min(total, parseInt(flag("to", total), 10));
 const stills = flag("stills", null);
 
-const browser = await chromium.launch({ args: ["--force-color-profile=srgb", "--font-render-hinting=none", "--disable-lcd-text"] });
+const browser = await chromium.launch({ args: ["--force-color-profile=srgb", "--font-render-hinting=none", "--disable-lcd-text", "--disable-web-security", "--allow-file-access-from-files"] });
 const page = await browser.newPage({ viewport: { width: 576, height: 1024 }, deviceScaleFactor: scale });
 await page.goto(pathToFileURL(resolve(dirname(new URL(import.meta.url).pathname), "engine/index.html")).href);
 await page.evaluate(v => window.loadVideo(v), video);
