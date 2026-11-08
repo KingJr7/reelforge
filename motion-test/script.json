@@ -1,10 +1,10 @@
-{ "title": "LevelCash v1 - Délestage", "logo": "img/logo.png", "brandImage": "img/brand_card.png", "duration": 32,
+{ "title": "LevelCash v1 - Délestage", "logo": "motion-test/img/logo.png", "brandImage": "motion-test/img/brand_card.png", "duration": 32, "audio": "voice.mp3",
   "scenes":[
-    {"image":"img/s01.jpg","text":"Tu aimerais gagner entre *3 000* et *10 000* FCFA par jour juste avec ton téléphone ?"},
-    {"image":"img/s02.jpg","text":"Parce qu'on passe déjà assez de temps dessus, autant essayer d'en tirer quelque chose."},
-    {"image":"img/s03.jpg","text":"Avec *LevelCash*, tu peux gagner de l'argent en regardant des pubs et en faisant quelques petites tâches."},
-    {"image":"img/s04.jpg","text":"Pas besoin d'avoir une boutique à gérer ou de savoir faire quelque chose de particulier. Tu as juste besoin de ton téléphone."},
-    {"image":"img/s01.jpg","text":"Et ce n'est pas tout : tu as aussi une *boutique digitale* déjà prête et un système d'affiliation."},
-    {"image":"img/s02.jpg","text":"Perso, je l'utilise même dans le *bus*, quand je n'ai rien à faire."},
-    {"image":"img/brand_card.png","text":"Commente *LEVELCASH* et je t'envoie le lien en privé."}
+    {"image":"motion-test/img/s01.jpg","text":"Tu aimerais gagner entre *3 000* et *10 000* FCFA par jour juste avec ton téléphone ?"},
+    {"image":"motion-test/img/s02.jpg","text":"Parce qu'on passe déjà assez de temps dessus, autant essayer d'en tirer quelque chose."},
+    {"image":"motion-test/img/s03.jpg","text":"Avec *LevelCash*, tu peux gagner de l'argent en regardant des pubs et en faisant quelques petites tâches."},
+    {"image":"motion-test/img/s04.jpg","text":"Pas besoin d'avoir une boutique à gérer ou de savoir faire quelque chose de particulier. Tu as juste besoin de ton téléphone."},
+    {"image":"motion-test/img/s01.jpg","text":"Et ce n'est pas tout : tu as aussi une *boutique digitale* déjà prête et un système d'affiliation."},
+    {"image":"motion-test/img/s02.jpg","text":"Perso, je l'utilise même dans le *bus*, quand je n'ai rien à faire."},
+    {"image":"motion-test/img/brand_card.png","text":"Commente *LEVELCASH* et je t'envoie le lien en privé."}
   ]}
