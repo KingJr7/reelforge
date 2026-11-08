@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<base href="../"><!-- toutes les ressources (images, polices, audio) sont relatives à la RACINE du projet -->
+<title>Motion Template — Brand Explainer 9:16</title>
+<meta name="viewport" content="width=576,height=1024">
+<style>
+/* ============ 1. DESIGN TOKENS (seule zone à changer pour une autre marque) ============ */
+:root{
+  --W:576px; --H:1024px;
+  --bg-top:#F6F2FF; --bg-bottom:#FFFFFF;           /* fond lavande -> blanc */
+  --grid:rgba(124,58,237,.055);                    /* quadrillage */
+  --ink:#11101C;                                   /* texte courant */
+  --accent-a:#7C3AED; --accent-b:#A78BFA;          /* dégradé mot-clé */
+  --shadow:rgba(139,92,246,.28);                   /* ombre carte (lavande) */
+  --track:rgba(124,58,237,.14); --fill:#7C3AED;    /* barre de progression */
+  --card-x:20px; --card-y:138px; --card-w:536px; --card-h:380px; --card-r:26px;
+  --text-top:564px; --text-pad:36px; --fs:23.5px; --lh:42px;
+  --logo-y:42px; --logo-w:100px; --logo-h:64px;
+  --bar-x:48px; --bar-y:961px; --bar-w:480px; --bar-h:4px;
+}
+@font-face{font-family:"Poppins";font-weight:600;src:url("assets/fonts/Poppins-SemiBold.ttf")}
+@font-face{font-family:"Poppins";font-weight:800;src:url("assets/fonts/Poppins-ExtraBold.ttf")}
+
+/* ============ 2. STAGE ============ */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:var(--W);height:var(--H);overflow:hidden;background:#fff}
+#stage{position:relative;width:var(--W);height:var(--H);overflow:hidden;
+  background:linear-gradient(180deg,var(--bg-top) 0%,#FBF9FF 45%,var(--bg-bottom) 100%);
+  font-family:"Poppins",system-ui,sans-serif;color:var(--ink)}
+#grid{position:absolute;inset:0;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:28px 28px;
+  -webkit-mask-image:linear-gradient(180deg,transparent 0%,#000 55%,#000 92%,transparent 100%);
+          mask-image:linear-gradient(180deg,transparent 0%,#000 55%,#000 92%,transparent 100%)}
+#logo{position:absolute;left:50%;top:var(--logo-y);width:var(--logo-w);height:var(--logo-h);
+  margin-left:calc(var(--logo-w) / -2);border-radius:12px;object-fit:cover;
+  box-shadow:0 6px 16px -6px var(--shadow)}
+
+/* ============ 3. CARTE IMAGE ============ */
+.card{position:absolute;left:var(--card-x);top:var(--card-y);width:var(--card-w);height:var(--card-h);
+  transform-origin:50% 100%;will-change:transform,opacity,filter;opacity:0}
+.card .shadow{position:absolute;inset:0;border-radius:var(--card-r);
+  box-shadow:12px 10px 28px -6px var(--shadow),0 18px 36px -18px var(--shadow);background:#fff}
+.card .clip{position:absolute;inset:0;border-radius:var(--card-r);overflow:hidden;background:#ddd}
+.card img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:cover;transform-origin:50% 50%}
+.card.brand .clip{background:#6400B0}
+.card.brand img{object-fit:contain}
+
+/* ============ 4. TEXTE ============ */
+.text{position:absolute;left:var(--text-pad);right:var(--text-pad);top:var(--text-top);
+  text-align:center;font-weight:600;font-size:var(--fs);line-height:var(--lh);letter-spacing:-.3px;opacity:1}
+.w{display:inline-block;white-space:pre;opacity:0;will-change:transform,opacity,filter;vertical-align:baseline}
+.w.em{font-weight:800;font-size:1.25em;line-height:1;position:relative;vertical-align:-.12em;
+  background:linear-gradient(100deg,var(--accent-a) 10%,var(--accent-b) 95%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;
+  padding:0 .06em}
+.w.em::after{content:"";position:absolute;left:4%;right:2%;bottom:-6px;height:14px;border-radius:50%;
+  background:rgba(167,139,250,.38);filter:blur(6px);z-index:-1;opacity:var(--glow,0)}
+.sp{display:inline-block;width:.28em}
+
+/* ============ 5. PROGRESSION + MOSAÏQUE ============ */
+#bar{position:absolute;left:var(--bar-x);top:var(--bar-y);width:var(--bar-w);height:var(--bar-h);
+  border-radius:3px;background:var(--track);overflow:hidden}
+#bar i{display:block;height:100%;width:0;border-radius:3px;background:linear-gradient(90deg,var(--fill),#8B5CF6)}
+#mosaic{position:absolute;inset:0;opacity:0;pointer-events:none;mix-blend-mode:multiply;
+  background-image:linear-gradient(#0000 0 0),
+   repeating-conic-gradient(#d9d3e6 0 25%,#f3f0f9 0 50%);background-size:100% 100%,24px 24px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="grid"></div>
+  <img id="logo" alt="">
+  <div id="cards"></div>
+  <div id="texts"></div>
+  <div id="bar"><i></i></div>
+  <div id="mosaic"></div>
+</div>
+<script src="engine/engine.js"></script>
+</body>
+</html>
