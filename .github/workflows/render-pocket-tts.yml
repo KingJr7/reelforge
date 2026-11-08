@@ -1,3 +1,4 @@
+# Test de synthèse vocale Pocket-TTS (Kyutai Labs) + moteur classique
 name: Test Pocket-TTS + Moteur Classique
 
 on:
