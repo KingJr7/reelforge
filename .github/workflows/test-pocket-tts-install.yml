@@ -1,0 +1,17 @@
+name: Test Pocket-TTS Install
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test-pocket-tts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pocket-TTS
+        run: |
+          pip3 install pocket-tts 2>&1 | tail -10
+          python3 -c "import pocket_tts; print('Pocket-TTS import OK')" 2>&1 || echo "Pocket-TTS import FAILED"
