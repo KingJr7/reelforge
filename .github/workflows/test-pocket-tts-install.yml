@@ -54,6 +54,7 @@ print(f'Duration match: {abs(float(s[\"duration\"]) - float(a[\"duration\"])) < 
           fi
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-pocket-tts-artifacts
