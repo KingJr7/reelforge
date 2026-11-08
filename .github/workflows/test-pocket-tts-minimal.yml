@@ -1,0 +1,29 @@
+name: Pocket-TTS Install Test
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pocket-TTS
+        run: |
+          echo "=== Attempt 1: pip install pocket-tts ==="
+          pip3 install pocket-tts 2>&1 | tail -20 || true
+          echo "=== Check import ==="
+          python3 -c "import pocket_tts; print('Pocket-TTS OK')" 2>&1 || echo "Pocket-TTS import FAILED"
+
+      - name: Try GitHub install
+        run: |
+          echo "=== Attempt 2: pip install from GitHub ==="
+          pip3 install git+https://github.com/kyutai-labs/pocket-tts.git 2>&1 | tail -20 || true
+          python3 -c "import pocket_tts; print('Pocket-TTS from GitHub OK')" 2>&1 || echo "Pocket-TTS GitHub import FAILED"
+
+      - name: List installed packages containing "pocket"
+        run: |
+          pip3 list 2>/dev/null | grep -i pocket || echo "No pocket package found"
