@@ -12,3 +12,5 @@ venv/
 cookies*.txt
 *.cookies
 *.cookies.txt
+node_modules
+package-lock.json

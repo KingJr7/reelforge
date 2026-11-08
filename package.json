@@ -1,0 +1,27 @@
+{
+  "name": "reelforge",
+  "version": "1.0.0",
+  "description": "Moteur de montage vidéo programmatique en Python — produit des Reels/Shorts/TikTok verticaux (1080×1920, 30 fps, H.264 + AAC) à partir d'un script annoté.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kingjr7/reelforge.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Kingjr7/reelforge/issues"
+  },
+  "homepage": "https://github.com/Kingjr7/reelforge#readme",
+  "dependencies": {
+    "playwright": "^1.65.0"
+  }
+}
