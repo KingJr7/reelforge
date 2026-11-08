@@ -12,13 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug environment
-        run: |
-          echo "Node: $(node --version)"
-          echo "NPM: $(npm --version)"
-          echo "FFmpeg: $(which ffmpeg || echo 'NOT FOUND')"
-          echo "CWD: $(pwd)"
-          ls -la motion-test/
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
       - name: Install system dependencies
         run: |
