@@ -8,36 +8,20 @@ on:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
+    container:
+      image: mcr.microsoft.com/playwright:v1.52.0-focal
+      options: --user root
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug environment
+      - name: Install ffmpeg
         run: |
-          echo "Node: $(node --version)"
-          echo "FFmpeg: $(which ffmpeg || echo 'NOT FOUND')"
-          echo "NPM: $(npm --version)"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Install Playwright + Chromium
-        run: |
-          npm i playwright
-          npx playwright install chromium --with-deps
-
-      - name: Verify installation
-        run: |
-          echo "Playwright: $(node -e "require('playwright'); console.log('OK')")"
-          echo "FFmpeg: $(ffmpeg -version | head -1)"
-          ls -la motion-test/
+          apt-get update && apt-get install -y ffmpeg
 
       - name: Build video.json
         run: |
           node motion-kit/scripts/build.mjs motion-test/script.json motion-test/words.json motion-test/video.json
-          cat motion-test/video.json
 
       - name: Render MP4
         run: |
