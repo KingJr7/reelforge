@@ -23,18 +23,14 @@ jobs:
       - name: Install Pocket-TTS
         run: |
           echo "=== Attempt 1: pip install pocket-tts ==="
-          pip3 install pocket-tts 2>&1 | tail -20 || echo "pip install failed"
-          echo "=== Attempt 2: pip install from GitHub ==="
-          pip3 install git+https://github.com/kyutai-labs/pocket-tts.git 2>&1 | tail -20 || true
+          pip3 install pocket-tts 2>&1 | tail -10 || true
           echo "=== Check import ==="
-          python3 -c "import pocket_tts; print('Pocket-TTS import OK'); print('Dir:', [x for x in dir(pocket_tts) if not x.startswith('_')])" 2>&1 || echo "Pocket-TTS import FAILED"
-
-      - name: Check installed packages
-        run: |
+          python3 -c "import pocket_tts; print('Pocket-TTS import OK'); print(dir(pocket_tts))" 2>&1 || echo "Pocket-TTS import FAILED"
           pip3 list | grep -i pocket || echo "No pocket package found"
 
       - name: Generate voice + Render video
         run: |
+          echo "=== Starting video generation ==="
           python3 make_reel.py \
             --script scripts/test_pocket_tts.txt \
             --tts pocket-tts \
@@ -44,11 +40,17 @@ jobs:
         env:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
 
+      - name: Check output file
+        run: |
+          ls -la out/
+          ls -la out/test_pocket_tts.mp4 2>/dev/null || echo "Video file not found"
+
       - name: Verify output
+        if: always()
         run: |
           if [ -f out/test_pocket_tts.mp4 ]; then
             python3 -c "
-import subprocess, json
+import subprocess, json, os
 out = subprocess.run(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height,r_frame_rate,codec_name,duration','-of','json','out/test_pocket_tts.mp4'],capture_output=True,text=True)
 s = json.loads(out.stdout)['streams'][0]
 print(f'Video: {s[\"width\"]}x{s[\"height\"]} {s[\"r_frame_rate\"]} {s[\"codec_name\"]} {s[\"duration\"]}s')
@@ -58,7 +60,8 @@ print(f'Audio: {a[\"codec_name\"]} {a[\"duration\"]}s')
 print(f'Duration match: {abs(float(s[\"duration\"]) - float(a[\"duration\"])) < 0.1}')
             "
           else
-            echo "Video file not found"
+            echo "Video file not found at out/test_pocket_tts.mp4"
+            ls -la out/
           fi
 
       - name: Upload artifacts
@@ -69,4 +72,3 @@ print(f'Duration match: {abs(float(s[\"duration\"]) - float(a[\"duration\"])) < 
           path: |
             out/test_pocket_tts.mp4
             pocket-tts-render.log
-            pocket-tts-install.log
