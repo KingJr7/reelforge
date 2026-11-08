@@ -1,4 +1,4 @@
-name: Test Pocket-TTS Install
+name: Test Pocket-TTS + Moteur Classique
 
 on:
   push:
@@ -7,11 +7,50 @@ on:
 jobs:
   test-pocket-tts:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Pocket-TTS
+      - name: Install system dependencies
         run: |
-          pip3 install pocket-tts 2>&1 | tail -10
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          pip3 install numpy scipy requests pillow assemblyai python-dotenv pytest
+
+      - name: Install Pocket-TTS (Kyutai Labs)
+        run: |
+          pip3 install pocket-tts 2>&1 | tail -5
           python3 -c "import pocket_tts; print('Pocket-TTS import OK')" 2>&1 || echo "Pocket-TTS import FAILED"
+
+      - name: Generate voice with Pocket-TTS + Render video
+        run: |
+          python3 make_reel.py \
+            --script scripts/test_pocket_tts.txt \
+            --tts pocket-tts \
+            --assemblyai \
+            --out out/test_pocket_tts.mp4 \
+            --glitch-frames 4
+        env:
+          ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+
+      - name: Verify output
+        run: |
+          python3 -c "
+import subprocess, json
+out = subprocess.run(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height,r_frame_rate,codec_name,duration','-of','json','out/test_pocket_tts.mp4'],capture_output=True,text=True)
+s = json.loads(out.stdout)['streams'][0]
+print(f'Video: {s[\"width\"]}x{s[\"height\"]} {s[\"r_frame_rate\"]} {s[\"codec_name\"]} {s[\"duration\"]}s')
+out2 = subprocess.run(['ffprobe','-v','error','-select_streams','a:0','-show_entries','stream=codec_name,duration','-of','json','out/test_pocket_tts.mp4'],capture_output=True,text=True)
+a = json.loads(out2.stdout)['streams'][0]
+print(f'Audio: {a[\"codec_name\"]} {a[\"duration\"]}s')
+print(f'Duration match: {abs(float(s[\"duration\"]) - float(a[\"duration\"])) < 0.1}')
+          "
+
+      - name: Upload test video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-pocket-tts-video
+          path: out/test_pocket_tts.mp4
