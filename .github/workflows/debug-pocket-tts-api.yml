@@ -1,4 +1,4 @@
-name: Debug Pocket-TTS Simple
+name: Debug Pocket-TTS API
 
 on:
   push:
@@ -14,21 +14,37 @@ jobs:
       - name: Install Pocket-TTS
         run: |
           pip3 install pocket-tts 2>&1 | tail -5
-          python3 -c "import pocket_tts; print('Pocket-TTS version:', pocket_tts.__version__ if hasattr(pocket_tts, '__version__') else 'unknown'); print('Methods:', [x for x in dir(pocket_tts) if not x.startswith('_')])" 2>&1 | tee pocket-tts-info.txt
+          python3 -c "
+import pocket_tts
+print('Pocket-TTS version:', pocket_tts.__version__ if hasattr(pocket_ttts, '__version__') else 'unknown')
+print('All attributes:', [x for x in dir(pocket_tts) if not x.startswith('_')])
+import inspect
+for name in dir(pocket_tts):
+    if not name.startswith('_'):
+        obj = getattr(pocket_tts, name)
+        if callable(obj):
+            try:
+                sig = __import__('inspect').signature(obj)
+                print(f'  {name}{sig}')
+            except:
+                print(f'  {name}: callable')
+        else:
+            print(f'  {name}: {type(obj)}')
+" 2>&1 | tee pocket-tts-api.txt
 
-      - name: Test Pocket-TTS generation
+      - name: Test Pocket-TTS generation methods
         run: |
-          echo "=== Testing Pocket-TTS generation ==="
           python3 -c "
 import pocket_tts
 import tempfile
 import os
+import subprocess
 
 text = 'Bonjour, ceci est un test.'
 output_file = '/tmp/test_output.wav'
 
 try:
-    # Try method 1: TTS class
+    # Try method 1: TTS class with to_file
     from pocket_tts import TTS
     tts = pocket_tts.TTS()
     tts.to_file('Bonjour, ceci est un test.', '/tmp/test1.wav')
@@ -62,8 +78,7 @@ try:
     print(f'CLI stderr: {result.stderr[:500] if result.stderr else \"None\"}')
 except Exception as e:
     print(f'Method 4 failed: {e}')
-
-" 2>&1 | tee pocket-tts-test.txt
+" 2>&1 | tee pocket-tts-api-test.txt
 
       - name: Upload results
         if: always()
@@ -72,4 +87,4 @@ except Exception as e:
           name: pocket-tts-debug
           path: |
             pocket-tts-api.txt
-            pocket-tts-test.txt
+            pocket-tts-api-test.txt
