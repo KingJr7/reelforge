@@ -22,11 +22,18 @@ jobs:
 
       - name: Install Pocket-TTS
         run: |
-          echo "=== Attempt 1: pip install pocket-tts ==="
-          pip3 install pocket-tts 2>&1 | tail -10 || true
-          echo "=== Check import ==="
-          python3 -c "import pocket_tts; print('Pocket-TTS import OK'); print(dir(pocket_tts))" 2>&1 || echo "Pocket-TTS import FAILED"
+          echo "=== Installing Pocket-TTS ==="
+          pip3 install pocket-tts 2>&1 | tail -10
+          python3 -c "import pocket_tts; print('Pocket-TTS import OK'); print([x for x in dir(pocket_tts) if not x.startswith('_')])" 2>&1 || echo "Pocket-TTS import FAILED"
           pip3 list | grep -i pocket || echo "No pocket package found"
+
+      - name: Debug - Check script and files
+        run: |
+          echo "=== Checking script and files ==="
+          ls -la scripts/
+          cat scripts/test_pocket_tts.txt
+          ls -la assets/
+          echo "=== Starting video generation ==="
 
       - name: Generate voice + Render video
         run: |
@@ -36,32 +43,22 @@ jobs:
             --tts pocket-tts \
             --assemblyai \
             --out out/test_pocket_tts.mp4 \
-            --glitch-frames 4 2>&1 | tee pocket-tts-render.log || echo "WARNING: Generation failed" | tee -a pocket-tts-render.log
+            --glitch-frames 4 2>&1 | tee pocket-tts-render.log
+          echo "Generation exit code: $?"
         env:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
 
-      - name: Check output file
+      - name: Debug - Check output file
         run: |
-          ls -la out/
-          ls -la out/test_pocket_tts.mp4 2>/dev/null || echo "Video file not found"
-
-      - name: Verify output
-        if: always()
-        run: |
+          echo "=== Checking output ==="
+          ls -la out/ 2>/dev/null || echo "out/ directory not found"
+          ls -la out/test_pocket_tts.mp4 2>/dev/null || echo "Video file NOT found"
           if [ -f out/test_pocket_tts.mp4 ]; then
-            python3 -c "
-import subprocess, json, os
-out = subprocess.run(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height,r_frame_rate,codec_name,duration','-of','json','out/test_pocket_tts.mp4'],capture_output=True,text=True)
-s = json.loads(out.stdout)['streams'][0]
-print(f'Video: {s[\"width\"]}x{s[\"height\"]} {s[\"r_frame_rate\"]} {s[\"codec_name\"]} {s[\"duration\"]}s')
-out2 = subprocess.run(['ffprobe','-v','error','-select_streams','a:0','-show_entries','stream=codec_name,duration','-of','json','out/test_pocket_tts.mp4'],capture_output=True,text=True)
-a = json.loads(out2.stdout)['streams'][0]
-print(f'Audio: {a[\"codec_name\"]} {a[\"duration\"]}s')
-print(f'Duration match: {abs(float(s[\"duration\"]) - float(a[\"duration\"])) < 0.1}')
-            "
+            ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,codec_name,duration -of csv=p=0 out/test_pocket_tts.mp4
+            ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,duration -of csv=p=0 out/test_pocket_tts.mp4
           else
-            echo "Video file not found at out/test_pocket_tts.mp4"
-            ls -la out/
+            echo "VIDEO FILE NOT FOUND"
+            ls -la out/ 2>/dev/null || echo "out/ directory does not exist"
           fi
 
       - name: Upload artifacts
@@ -72,3 +69,4 @@ print(f'Duration match: {abs(float(s[\"duration\"]) - float(a[\"duration\"])) < 
           path: |
             out/test_pocket_tts.mp4
             pocket-tts-render.log
+            pocket-tts-install.log
