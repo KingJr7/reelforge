@@ -1,0 +1,90 @@
+name: Debug Pocket-TTS API
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  debug-pocket-tts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pocket-TTS
+        run: |
+          pip3 install pocket-tts 2>&1 | tail -5
+          python3 -c "
+import pocket_tts
+print('Pocket-TTS version:', pocket_tts.__version__ if hasattr(pocket_tts, '__version__') else 'unknown')
+print('Attributes:', [x for x in dir(pocket_tts) if not x.startswith('_')])
+import inspect
+for name in dir(pocket_tts):
+    if not name.startswith('_'):
+        obj = getattr(pocket_tts, name)
+        if callable(obj):
+            try:
+                sig = __import__('inspect').signature(obj)
+                print(f'  {name}{sig}')
+            except:
+                print(f'  {name}: callable')
+        else:
+            print(f'  {name}: {type(obj)}')
+" 2>&1 | tee pocket-tts-api.txt
+
+      - name: Test Pocket-TTS generation
+        run: |
+          python3 -c "
+import pocket_tts
+import tempfile
+import os
+
+# Try different API patterns
+text = 'Bonjour, ceci est un test.'
+output_file = '/tmp/test_output.wav'
+
+try:
+    # Try pattern 1: TTS class with to_file
+    from pocket_tts import TTS
+    tts = TTS()
+    tts.to_file('Bonjour, ceci est un test.', '/tmp/test1.wav')
+    print('Method 1 (TTS().to_file) succeeded')
+except Exception as e:
+    print(f'Method 1 failed: {e}')
+
+try:
+    # Method 2: generate function
+    from pocket_tts import generate
+    generate('Bonjour, ceci est un test.', '/tmp/test2.wav')
+    print('Method 2 (generate) succeeded')
+except Exception as e:
+    print(f'Method 2 failed: {e}')
+
+try:
+    # Method 3: CLI
+    import subprocess
+    result = subprocess.run(['pocket-tts', '--text', 'Bonjour', '--output', '/tmp/test3.wav'], capture_output=True, text=True, timeout=60)
+    if result.returncode == 0:
+        print('Method 3 (CLI) succeeded')
+    else:
+        print(f'Method 3 failed: {result.stderr}')
+except Exception as e:
+    print(f'Method 3 failed: {e}')
+
+try:
+    # Method 4: CLI with different args
+    result = subprocess.run(['pocket-tts', '--help'], capture_output=True, text=True, timeout=10)
+    print('CLI help:', result.stdout[:500] if result.stdout else 'No stdout')
+    print(f'CLI stderr: {result.stderr[:500] if result.stderr else \"None\"}')
+except Exception as e:
+    print(f'Method 4 failed: {e}')
+" 2>&1 | tee pocket-tts-api-test.txt
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocket-tts-debug
+          path: |
+            pocket-tts-api.txt
+            pocket-tts-api-test.txt
