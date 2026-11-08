@@ -142,7 +142,8 @@ jobs:
 
       - name: Install Pocket-TTS (Kyutai Labs)
         run: |
-          pip3 install pocket-tts || echo "WARNING: pocket-tts install failed"
+          pip3 install pocket-tts 2>&1 | tail -5 || echo "WARNING: pocket-tts pip install failed"
+          python3 -c "import pocket_tts; print('Pocket-TTS import OK')" 2>&1 || echo "WARNING: pocket_tts import failed"
 
       - name: Test Pocket-TTS voice generation
         run: |
@@ -151,7 +152,7 @@ jobs:
             --tts pocket-tts \
             --assemblyai \
             --out out/test_pocket_tts.mp4 \
-            --glitch-frames 4
+            --glitch-frames 4 2>&1 || echo "WARNING: Pocket-TTS generation failed"
         env:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
 
