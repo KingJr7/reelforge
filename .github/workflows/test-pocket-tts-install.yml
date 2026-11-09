@@ -11,15 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup assets directory FIRST
-        run: |
-          echo "=== Setting up assets FIRST ==="
-          mkdir -p assets
-          cp -r motion-test/img/* assets/ 2>/dev/null || echo "Warning: motion-test/img not found"
-          ls -la assets/
-
-      - uses: actions/checkout@v4
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
