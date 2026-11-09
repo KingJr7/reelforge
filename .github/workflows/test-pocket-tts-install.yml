@@ -54,8 +54,8 @@ jobs:
             --glitch-frames 4 \
             --engine classic 2>&1 | tee pocket-tts-render.log
           echo "Generation exit code: $?"
-          echo "=== pocket-tts-render.log tail ==="
-          tail -50 pocket-tts-render.log
+          echo "=== pocket-tts-render.log FULL ==="
+          cat pocket-tts-render.log
         env:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
 
