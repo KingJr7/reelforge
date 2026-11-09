@@ -271,7 +271,7 @@ def _main() -> None:
         print(f"  Voix importée : {voice_duration:.2f}s, {len(word_times)} mots avec timestamps")
     elif args.tts == "pocket-tts":
         print("DEBUG: Calling generate_voice_pocket_tts", flush=True)
-        voice_duration, word_times = generate_voice_pocket_tts(script_text, parsed.words, args.assemblyai)
+        voice_path, voice_duration, word_times = generate_voice_pocket_tts(script_text, parsed.words, args.assemblyai)
         print(f"DEBUG: generate_voice_pocket_tts returned", flush=True)
         print(f"  Voix Pocket-TTS : {voice_duration:.2f}s, {len(word_times)} mots avec timestamps")
     else:
@@ -444,8 +444,8 @@ def _main() -> None:
     print("  Terminé.")
 
 
-def generate_voice_pocket_tts(script_text: str, words: list, use_assemblyai: bool) -> tuple[float, list[tuple[float, float]]]:
-    """Génère la voix avec Pocket-TTS (Kyutai Labs) via CLI et retourne (durée, word_times)."""
+def generate_voice_pocket_tts(script_text: str, words: list, use_assemblyai: bool) -> tuple[str, float, list[tuple[float, float]]]:
+    """Génère la voix avec Pocket-TTS (Kyutai Labs) via CLI et retourne (voice_path, durée, word_times)."""
     import re as _re
     import subprocess
     import sys
@@ -548,7 +548,7 @@ def generate_voice_pocket_tts(script_text: str, words: list, use_assemblyai: boo
 
     # --- 5. Sauvegarder dans le cache pour cohérence ---
     wavfile.write(str(VOICE_CACHE_DIR / "voice_file_input.wav"), AUDIO_SAMPLE_RATE, audio)
-    return voice_duration, word_times
+    return str(wav_path), voice_duration, word_times
 
 
 if __name__ == "__main__":
