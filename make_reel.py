@@ -95,8 +95,11 @@ def main() -> None:
     ensure_dirs()
     check_ffmpeg()
 
+    print("DEBUG: Starting main()", flush=True)
+
     parser = build_parser()
     args = parser.parse_args()
+    print(f"DEBUG: args parsed, script={args.script}", flush=True)
 
     if args.list_voices:
         try:
@@ -155,7 +158,7 @@ def main() -> None:
                 else:
                     print(f"    -> ÉCHEC (carte de secours utilisée)")
 
-    # 3. Voix
+    print("DEBUG: Starting voice generation", flush=True)
     if args.demo:
         pause_total = sum(float(m.value) for m in parsed.markers if m.kind == "pause")
         est_duration = len(parsed.words) / 3.2 + pause_total
@@ -258,7 +261,9 @@ def main() -> None:
         voice_path = VOICE_CACHE_DIR / "voice_file_input.wav"
         print(f"  Voix importée : {voice_duration:.2f}s, {len(word_times)} mots avec timestamps")
     elif args.tts == "pocket-tts":
+        print("DEBUG: Calling generate_voice_pocket_tts", flush=True)
         voice_duration, word_times = generate_voice_pocket_tts(script_text, parsed.words, args.assemblyai)
+        print(f"DEBUG: generate_voice_pocket_tts returned", flush=True)
         print(f"  Voix Pocket-TTS : {voice_duration:.2f}s, {len(word_times)} mots avec timestamps")
     else:
         voice_id = os.getenv("ELEVENLABS_VOICE_ID", "")
@@ -315,6 +320,7 @@ def main() -> None:
     print(f"  Voix : {voice_duration:.2f}s, {len(word_times)} mots avec timestamps")
 
     # 4. Timeline
+    print("DEBUG: Building timeline", flush=True)
     invert_at = args.invert_at if args.invert_at is not None else DEFAULT_INVERT_AT
     tl = build_timeline(parsed, word_times, flow_mode=args.flow, invert_at=invert_at)
 
@@ -376,6 +382,7 @@ def main() -> None:
 
     # 7. Rendu vidéo
     print(f"  Rendu vidéo avec le backend '{args.engine}'...")
+    print(f"DEBUG: Starting render_timeline with engine={args.engine}", flush=True)
     if args.engine == "classic":
         render_timeline(
             tl, Path(mix_path), out_path, width, height,
@@ -424,6 +431,7 @@ def main() -> None:
         except Exception:
             pass
 
+    print("DEBUG: main() completed successfully", flush=True)
     print("  Terminé.")
 
 
