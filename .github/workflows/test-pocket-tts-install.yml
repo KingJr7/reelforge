@@ -27,6 +27,13 @@ jobs:
           python3 -c "import pocket_tts; print('Pocket-TTS import OK'); print([x for x in dir(pocket_ttts) if not x.startswith('_')])" 2>&1 || echo "Pocket-TTS import FAILED"
           pip3 list | grep -i pocket || echo "No pocket package found"
 
+      - name: Setup assets directory
+        run: |
+          echo "=== Setting up assets ==="
+          mkdir -p assets
+          cp -r motion-test/img/* assets/
+          ls -la assets/
+
       - name: Debug - Check script and files
         run: |
           echo "=== Checking script and files ==="
