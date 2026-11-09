@@ -42,16 +42,32 @@ jobs:
           ls -la scripts/
           cat scripts/test_pocket_tts.txt
           ls -la assets/
-          echo "=== Starting voice generation test ==="
+          echo "=== Starting FULL video generation ==="
 
-      - name: Test Pocket-TTS voice generation
+      - name: Generate full video with Pocket-TTS + classic renderer
         run: |
-          python3 debug_generate_voice.py 2>&1 | tee pocket-tts-render.log
+          python3 make_reel.py \
+            --script scripts/test_pocket_tts.txt \
+            --tts pocket-tts \
+            --assemblyai \
+            --out out/test_pocket_tts.mp4 \
+            --glitch-frames 4 \
+            --engine classic 2>&1 | tee pocket-tts-render.log
           echo "Generation exit code: $?"
-          echo "=== pocket-tts-render.log content ==="
-          cat pocket-tts-render.log
+          echo "=== pocket-tts-render.log tail ==="
+          tail -50 pocket-tts-render.log
         env:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
+
+      - name: Check output
+        run: |
+          echo "=== Checking output ==="
+          ls -la out/ 2>/dev/null || echo "out/ directory not found"
+          ls -la out/test_pocket_tts.mp4 2>/dev/null || echo "Video file NOT found"
+          if [ -f out/test_pocket_tts.mp4 ]; then
+            ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,codec_name,duration -of csv=p=0 out/test_pocket_tts.mp4
+            ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,duration -of csv=p=0 out/test_pocket_tts.mp4
+          fi
 
       - name: Upload artifacts
         if: always()
@@ -60,5 +76,4 @@ jobs:
           name: test-pocket-tts-artifacts
           path: |
             pocket-tts-render.log
-            voice_cache/
-            out/
+            out/test_pocket_tts.mp4
