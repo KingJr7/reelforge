@@ -63,6 +63,8 @@ jobs:
             --out out/test_pocket_tts.mp4 \
             --glitch-frames 4 2>&1 | tee pocket-tts-render.log
           echo "Generation exit code: $?"
+          echo "=== pocket-tts-render.log content ==="
+          cat pocket-tts-render.log
         env:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
 
