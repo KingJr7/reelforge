@@ -428,7 +428,7 @@ def main() -> None:
 
 
 def generate_voice_pocket_tts(script_text: str, words: list, use_assemblyai: bool) -> tuple[float, list[tuple[float, float]]]:
-    """Génère la voix avec Pocket-TTS (Kyutai Labs) et retourne (durée, word_times)."""
+    """Génère la voix avec Pocket-TTS (Kyutai Labs) via CLI et retourne (durée, word_times)."""
     import re as _re
     import subprocess
     import sys
@@ -447,48 +447,27 @@ def generate_voice_pocket_tts(script_text: str, words: list, use_assemblyai: boo
             timeout=300,
         )
 
-    # --- 2. Générer le fichier audio ---
-    generated = False
-    # Tentative 1 : API objet TTS().to_file()
+    # --- 2. Générer le fichier audio via CLI pocket-tts generate ---
+    # Utilise le modèle français par défaut (voice 'estelle' pour le français)
+    cmd = [
+        "pocket-tts", "generate",
+        "--text", script_text,
+        "--language", "french",
+        "--output-path", str(wav_path),
+        "--device", "cpu",
+        "--no-quantize",
+    ]
+    print(f"  Pocket-TTS : génération via CLI ({' '.join(cmd[:5])}...)")
     try:
-        from pocket_tts import TTS
-
-        tts = TTS()
-        tts.to_file(script_text, str(wav_path))
-        generated = True
-        print("  Pocket-TTS : génération via TTS().to_file()")
+        subprocess.run(cmd, check=True, timeout=300, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode("utf-8", errors="ignore") if e.stderr else ""
+        raise RuntimeError(f"Pocket-TTS CLI échoué (code {e.returncode}): {stderr}")
     except Exception as e:
-        print(f"  Pocket-TTS : TTS().to_file() échoué ({e})")
+        raise RuntimeError(f"Pocket-TTS CLI échoué: {e}")
 
-    # Tentative 2 : fonction generate()
-    if not generated:
-        try:
-            from pocket_tts import generate
-
-            generate(script_text, str(wav_path))
-            generated = True
-            print("  Pocket-TTS : génération via generate()")
-        except Exception as e:
-            print(f"  Pocket-TTS : generate() échoué ({e})")
-
-    # Tentative 3 : CLI pocket-tts
-    if not generated:
-        try:
-            subprocess.run(
-                ["pocket-tts", "--text", script_text, "--output", str(wav_path)],
-                check=True,
-                timeout=300,
-            )
-            generated = True
-            print("  Pocket-TTS : génération via CLI pocket-tts")
-        except Exception as e:
-            print(f"  Pocket-TTS : CLI échoué ({e})")
-
-    if not generated or not wav_path.exists() or wav_path.stat().st_size == 0:
-        raise RuntimeError(
-            "Pocket-TTS n'a pas pu générer le fichier audio. "
-            "Vérifiez que pocket-tts est correctement installé et accessible."
-        )
+    if not wav_path.exists() or wav_path.stat().st_size == 0:
+        raise RuntimeError("Pocket-TTS n'a pas généré de fichier audio valide.")
 
     # --- 3. Décoder le WAV ---
     audio = decode_voice(wav_path)
