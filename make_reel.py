@@ -91,11 +91,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    try:
+        _main()
+    except Exception as e:
+        print(f"FATAL ERROR in main: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+def _main() -> None:
     load_dotenv()
     ensure_dirs()
     check_ffmpeg()
 
-    print("DEBUG: Starting main()", flush=True)
+    print("DEBUG: Starting _main()", flush=True)
 
     parser = build_parser()
     args = parser.parse_args()
@@ -540,4 +549,8 @@ def generate_voice_pocket_tts(script_text: str, words: list, use_assemblyai: boo
     # --- 5. Sauvegarder dans le cache pour cohérence ---
     wavfile.write(str(VOICE_CACHE_DIR / "voice_file_input.wav"), AUDIO_SAMPLE_RATE, audio)
     return voice_duration, word_times
+
+
+if __name__ == "__main__":
+    main()
 
