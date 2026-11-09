@@ -15,7 +15,10 @@ jobs:
       - name: Install Pocket-TTS
         run: |
           pip3 install pocket-tts 2>&1 | tail -5
-          python3 -c "
+
+      - name: Inspect Pocket-TTS module
+        run: |
+          cat > /tmp/inspect_pocket_tts.py << 'PYEOF'
 import pocket_tts
 print('Pocket-TTS version:', pocket_tts.__version__ if hasattr(pocket_tts, '__version__') else 'unknown')
 print('All attributes:', [x for x in dir(pocket_tts) if not x.startswith('_')])
@@ -25,27 +28,25 @@ for name in dir(pocket_tts):
         obj = getattr(pocket_tts, name)
         if callable(obj):
             try:
-                sig = __import__('inspect').signature(obj)
+                sig = inspect.signature(obj)
                 print(f'  {name}{sig}')
             except:
                 print(f'  {name}: callable')
         else:
             print(f'  {name}: {type(obj)}')
-" 2>&1 | tee pocket-tts-api.txt
+PYEOF
+          python3 /tmp/inspect_pocket_tts.py 2>&1 | tee pocket-tts-api.txt
 
       - name: Test Pocket-TTS generation methods
         run: |
-          python3 -c "
+          cat > /tmp/test_pocket_tts.py << 'PYEOF'
 import pocket_tts
-import tempfile
-import os
 import subprocess
 
 text = 'Bonjour, ceci est un test.'
-output_file = '/tmp/test_output.wav'
 
+# Method 1: TTS class with to_file
 try:
-    # Try method 1: TTS class with to_file
     from pocket_tts import TTS
     tts = pocket_tts.TTS()
     tts.to_file('Bonjour, ceci est un test.', '/tmp/test1.wav')
@@ -53,17 +54,16 @@ try:
 except Exception as e:
     print(f'Method 1 failed: {e}')
 
+# Method 2: generate function
 try:
-    # Method 2: generate function
     from pocket_tts import generate
     generate('Bonjour, ceci est un test.', '/tmp/test2.wav')
     print('Method 2 (generate) succeeded')
 except Exception as e:
     print(f'Method 2 failed: {e}')
 
+# Method 3: CLI
 try:
-    # Method 3: CLI
-    import subprocess
     result = subprocess.run(['pocket-tts', '--text', 'Bonjour', '--output', '/tmp/test3.wav'], capture_output=True, text=True, timeout=60)
     if result.returncode == 0:
         print('Method 3 (CLI) succeeded')
@@ -72,14 +72,15 @@ try:
 except Exception as e:
     print(f'Method 3 failed: {e}')
 
+# Method 4: CLI help
 try:
-    # Method 4: CLI help
     result = subprocess.run(['pocket-tts', '--help'], capture_output=True, text=True, timeout=10)
     print('CLI help:', result.stdout[:500] if result.stdout else 'No stdout')
-    print(f'CLI stderr: {result.stderr[:500] if result.stderr else \"None\"}')
+    print(f'CLI stderr: {result.stderr[:500] if result.stderr else "None"}')
 except Exception as e:
     print(f'Method 4 failed: {e}')
-" 2>&1 | tee pocket-tts-api-test.txt
+PYEOF
+          python3 /tmp/test_pocket_tts.py 2>&1 | tee pocket-tts-api-test.txt
 
       - name: Upload results
         if: always()
