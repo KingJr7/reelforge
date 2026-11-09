@@ -11,15 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup assets directory FIRST
-        run: |
-          echo "=== Setting up assets FIRST ==="
-          mkdir -p assets
-          cp -r motion-test/img/* assets/ 2>/dev/null || echo "Warning: motion-test/img not found"
-          ls -la assets/
-
-      - uses: actions/checkout@v4
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -35,7 +26,7 @@ jobs:
         run: |
           echo "=== Installing Pocket-TTS ==="
           pip3 install pocket-tts 2>&1 | tail -10
-          python3 -c "import pocket_tts; print('Pocket-TTS import OK'); print([x for x in dir(pocket_ttts) if not x.startswith('_')])" 2>&1 || echo "Pocket-TTS import FAILED"
+          python3 -c "import pocket_tts; print('Pocket-TTS import OK')" 2>&1 || echo "Pocket-TTS import FAILED"
           pip3 list | grep -i pocket || echo "No pocket package found"
 
       - name: Setup assets directory
@@ -51,48 +42,16 @@ jobs:
           ls -la scripts/
           cat scripts/test_pocket_tts.txt
           ls -la assets/
-          echo "=== Starting video generation ==="
+          echo "=== Starting voice generation test ==="
 
-      - name: Generate voice + Render video
+      - name: Test Pocket-TTS voice generation
         run: |
-          echo "=== Starting video generation ==="
-          python3 -c "
-import sys
-sys.path.insert(0, '.')
-from make_reel import generate_voice_pocket_tts
-from script_parser import parse_script
-
-with open('scripts/test_pocket_tts.txt', 'r') as f:
-    script_text = f.read()
-parsed = parse_script(script_text)
-print(f'Parsed {len(parsed.words)} words')
-
-try:
-    dur, wt = generate_voice_pocket_tts(script_text, parsed.words, True)
-    print(f'generate_voice_pocket_tts returned: duration={dur}, word_times={len(wt)}')
-except Exception as e:
-    print(f'ERROR in generate_voice_pocket_tts: {e}')
-    import traceback
-    traceback.print_exc()
-" 2>&1 | tee pocket-tts-render.log
+          python3 debug_generate_voice.py 2>&1 | tee pocket-tts-render.log
           echo "Generation exit code: $?"
           echo "=== pocket-tts-render.log content ==="
           cat pocket-tts-render.log
         env:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
-
-      - name: Debug - Check output file
-        run: |
-          echo "=== Checking output ==="
-          ls -la out/ 2>/dev/null || echo "out/ directory not found"
-          ls -la out/test_pocket_tts.mp4 2>/dev/null || echo "Video file NOT found"
-          if [ -f out/test_pocket_tts.mp4 ]; then
-            ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,codec_name,duration -of csv=p=0 out/test_pocket_tts.mp4
-            ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,duration -of csv=p=0 out/test_pocket_tts.mp4
-          else
-            echo "VIDEO FILE NOT FOUND"
-            ls -la out/ 2>/dev/null || echo "out/ directory does not exist"
-          fi
 
       - name: Upload artifacts
         if: always()
@@ -100,5 +59,6 @@ except Exception as e:
         with:
           name: test-pocket-tts-artifacts
           path: |
-            out/test_pocket_tts.mp4
             pocket-tts-render.log
+            voice_cache/
+            out/
