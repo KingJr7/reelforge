@@ -29,11 +29,11 @@ for name in dir(pocket_tts):
         if callable(obj):
             try:
                 sig = inspect.signature(obj)
-                print(f'  {name}{sig}')
+                print('  {}{}'.format(name, sig))
             except:
-                print(f'  {name}: callable')
+                print('  {}: callable'.format(name))
         else:
-            print(f'  {name}: {type(obj)}')
+            print('  {}: {}'.format(name, type(obj)))
 PYEOF
           python3 /tmp/inspect_pocket_tts.py 2>&1 | tee pocket-tts-api.txt
 
@@ -52,7 +52,7 @@ try:
     tts.to_file('Bonjour, ceci est un test.', '/tmp/test1.wav')
     print('Method 1 (TTS().to_file) succeeded')
 except Exception as e:
-    print(f'Method 1 failed: {e}')
+    print('Method 1 failed: {}'.format(e))
 
 # Method 2: generate function
 try:
@@ -60,7 +60,7 @@ try:
     generate('Bonjour, ceci est un test.', '/tmp/test2.wav')
     print('Method 2 (generate) succeeded')
 except Exception as e:
-    print(f'Method 2 failed: {e}')
+    print('Method 2 failed: {}'.format(e))
 
 # Method 3: CLI
 try:
@@ -68,17 +68,19 @@ try:
     if result.returncode == 0:
         print('Method 3 (CLI) succeeded')
     else:
-        print(f'Method 3 failed: {result.stderr}')
+        print('Method 3 failed: {}'.format(result.stderr))
 except Exception as e:
-    print(f'Method 3 failed: {e}')
+    print('Method 3 failed: {}'.format(e))
 
 # Method 4: CLI help
 try:
     result = subprocess.run(['pocket-tts', '--help'], capture_output=True, text=True, timeout=10)
-    print('CLI help:', result.stdout[:500] if result.stdout else 'No stdout')
-    print(f'CLI stderr: {result.stderr[:500] if result.stderr else "None"}')
+    stdout = result.stdout[:500] if result.stdout else 'No stdout'
+    stderr = result.stderr[:500] if result.stderr else 'None'
+    print('CLI help: {}'.format(stdout))
+    print('CLI stderr: {}'.format(stderr))
 except Exception as e:
-    print(f'Method 4 failed: {e}')
+    print('Method 4 failed: {}'.format(e))
 PYEOF
           python3 /tmp/test_pocket_tts.py 2>&1 | tee pocket-tts-api-test.txt
 
