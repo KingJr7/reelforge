@@ -17,7 +17,7 @@ jobs:
           pip3 install pocket-tts 2>&1 | tail -5
           python3 -c "
 import pocket_tts
-print('Pocket-TTS version:', pocket_tts.__version__ if hasattr(pocket_ttts, '__version__') else 'unknown')
+print('Pocket-TTS version:', pocket_tts.__version__ if hasattr(pocket_tts, '__version__') else 'unknown')
 print('All attributes:', [x for x in dir(pocket_tts) if not x.startswith('_')])
 import inspect
 for name in dir(pocket_tts):
