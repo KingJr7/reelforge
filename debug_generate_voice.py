@@ -16,7 +16,7 @@ def main():
     print(f'Words: {[w.text for w in parsed.words[:10]]}...')
     
     try:
-        dur, wt = generate_voice_pocket_tts(script_text, parsed.words, True)
+        dur, wt = generate_voice_pocket_tts(parsed.clean_text, parsed.words, True)
         print(f'generate_voice_pocket_tts returned: duration={dur}, word_times={len(wt)}')
         if wt:
             print(f'First 5 word_times: {wt[:5]}')

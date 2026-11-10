@@ -271,7 +271,7 @@ def _main() -> None:
         print(f"  Voix importée : {voice_duration:.2f}s, {len(word_times)} mots avec timestamps")
     elif args.tts == "pocket-tts":
         print("DEBUG: Calling generate_voice_pocket_tts", flush=True)
-        voice_path, voice_duration, word_times = generate_voice_pocket_tts(script_text, parsed.words, args.assemblyai)
+        voice_path, voice_duration, word_times = generate_voice_pocket_tts(parsed.clean_text, parsed.words, args.assemblyai)
         print(f"DEBUG: generate_voice_pocket_tts returned", flush=True)
         print(f"  Voix Pocket-TTS : {voice_duration:.2f}s, {len(word_times)} mots avec timestamps")
     else:
@@ -279,7 +279,7 @@ def _main() -> None:
         model_id = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
         try:
             voice_path, voice_duration, word_times = generate_voice_elevenlabs(
-                script_text, voice_id, model_id, args.force_voice)
+                parsed.clean_text, voice_id, model_id, args.force_voice)
         except RuntimeError as e:
             print(f"ERREUR : {e}", file=sys.stderr)
             sys.exit(1)
