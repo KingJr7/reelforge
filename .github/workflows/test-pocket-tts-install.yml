@@ -47,10 +47,10 @@ jobs:
       - name: Generate full video with Pocket-TTS + classic renderer
         run: |
           python3 make_reel.py \
-            --script scripts/test_pocket_tts.txt \
+            --script scripts/levelcash_congo_v1.txt \
             --tts pocket-tts \
             --assemblyai \
-            --out out/test_pocket_tts.mp4 \
+            --out out/levelcash_congo_v1.mp4 \
             --glitch-frames 4 \
             --engine classic 2>&1 | tee pocket-tts-render.log
           echo "Generation exit code: $?"
