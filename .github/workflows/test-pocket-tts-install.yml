@@ -63,10 +63,10 @@ jobs:
         run: |
           echo "=== Checking output ==="
           ls -la out/ 2>/dev/null || echo "out/ directory not found"
-          ls -la out/test_pocket_tts.mp4 2>/dev/null || echo "Video file NOT found"
-          if [ -f out/test_pocket_tts.mp4 ]; then
-            ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,codec_name,duration -of csv=p=0 out/test_pocket_tts.mp4
-            ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,duration -of csv=p=0 out/test_pocket_tts.mp4
+          ls -la out/levelcash_congo_v1.mp4 2>/dev/null || echo "Video file NOT found"
+          if [ -f out/levelcash_congo_v1.mp4 ]; then
+            ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate,codec_name,duration -of csv=p=0 out/levelcash_congo_v1.mp4
+            ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,duration -of csv=p=0 out/levelcash_congo_v1.mp4
           fi
 
       - name: Upload artifacts
@@ -76,4 +76,4 @@ jobs:
           name: test-pocket-tts-artifacts
           path: |
             pocket-tts-render.log
-            out/test_pocket_tts.mp4
+            out/levelcash_congo_v1.mp4
